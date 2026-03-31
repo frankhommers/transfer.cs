@@ -1,0 +1,10 @@
+bin/
+obj/
+node_modules/
+build/
+dist/
+*.user
+.DS_Store
+.vs/
+.idea/
+data/
