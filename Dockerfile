@@ -26,13 +26,12 @@ RUN dotnet publish backend/src/TransferCs.Api/TransferCs.Api.csproj \
 
 # Stage 3: Minimal alpine runtime
 FROM alpine:3.21
-RUN apk add --no-cache libstdc++ libgcc icu-libs \
+RUN apk add --no-cache libstdc++ libgcc icu-libs su-exec \
     && addgroup -S transfercs && adduser -S transfercs -G transfercs \
     && mkdir -p /data && chown transfercs:transfercs /data
 WORKDIR /app
 COPY --from=backend-build /out .
-
-USER transfercs
+COPY entrypoint.sh .
 
 ENV ASPNETCORE_URLS=http://+:8080
 ENV TransferCs__BasePath=/data
@@ -42,4 +41,4 @@ VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:8080/health || exit 1
-ENTRYPOINT ["./TransferCs.Api"]
+ENTRYPOINT ["./entrypoint.sh"]
