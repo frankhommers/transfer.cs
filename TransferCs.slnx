@@ -1,11 +1,11 @@
 <Solution>
-  <Folder Name="/Backend/">
-    <Project Path="backend/src/TransferCs.Api/TransferCs.Api.csproj" />
-  </Folder>
-  <Folder Name="/Backend/Tests/">
-    <Project Path="backend/tests/TransferCs.Api.Tests/TransferCs.Api.Tests.csproj" />
-  </Folder>
-  <Folder Name="/Frontend/">
-    <Project Path="frontend/TransferCs.Frontend.esproj" />
-  </Folder>
+    <Folder Name="/Backend/">
+        <Project Path="backend/src/TransferCs.Api/TransferCs.Api.csproj"/>
+    </Folder>
+    <Folder Name="/Backend/Tests/">
+        <Project Path="backend/tests/TransferCs.Api.Tests/TransferCs.Api.Tests.csproj"/>
+    </Folder>
+    <Folder Name="/Frontend/">
+        <Project Path="frontend/TransferCs.Frontend.esproj"/>
+    </Folder>
 </Solution>

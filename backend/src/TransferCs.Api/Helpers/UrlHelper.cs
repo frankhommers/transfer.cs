@@ -4,40 +4,41 @@ namespace TransferCs.Api.Helpers;
 
 public static class UrlHelper
 {
-    public static string ResolveUrl(HttpRequest request, string path, TransferCsOptions options)
-    {
-        var scheme = request.Headers["X-Forwarded-Proto"].FirstOrDefault()
-                     ?? request.Scheme;
+  public static string ResolveUrl(HttpRequest request, string path, TransferCsOptions options)
+  {
+    if (!string.IsNullOrEmpty(options.BaseUrl))
+      return $"{options.BaseUrl.TrimEnd('/')}{path}";
 
-        var host = request.Host.Host;
-        var port = request.Host.Port;
+    string scheme = request.Headers["X-Forwarded-Proto"].FirstOrDefault()
+                    ?? request.Scheme;
 
-        if (!string.IsNullOrEmpty(options.ProxyPort))
-        {
-            if (int.TryParse(options.ProxyPort, out var proxyPort))
-                port = proxyPort;
-        }
+    string host = request.Host.Host;
+    int? port = request.Host.Port;
 
-        var proxyPath = options.ProxyPath.TrimEnd('/');
+    if (!string.IsNullOrEmpty(options.ProxyPort))
+      if (int.TryParse(options.ProxyPort, out int proxyPort))
+        port = proxyPort;
 
-        var portSuffix = port.HasValue && !IsDefaultPort(scheme, port.Value)
-            ? $":{port.Value}"
-            : "";
+    string proxyPath = options.ProxyPath.TrimEnd('/');
 
-        var fullPath = string.IsNullOrEmpty(proxyPath)
-            ? path
-            : $"{proxyPath}{path}";
+    string portSuffix = port.HasValue && !IsDefaultPort(scheme, port.Value)
+      ? $":{port.Value}"
+      : "";
 
-        return $"{scheme}://{host}{portSuffix}{fullPath}";
-    }
+    string fullPath = string.IsNullOrEmpty(proxyPath)
+      ? path
+      : $"{proxyPath}{path}";
 
-    public static string WebAddress(HttpRequest request, TransferCsOptions options)
-    {
-        return ResolveUrl(request, "/", options);
-    }
+    return $"{scheme}://{host}{portSuffix}{fullPath}";
+  }
 
-    private static bool IsDefaultPort(string scheme, int port)
-    {
-        return (scheme == "http" && port == 80) || (scheme == "https" && port == 443);
-    }
+  public static string WebAddress(HttpRequest request, TransferCsOptions options)
+  {
+    return ResolveUrl(request, "/", options);
+  }
+
+  private static bool IsDefaultPort(string scheme, int port)
+  {
+    return (scheme == "http" && port == 80) || (scheme == "https" && port == 443);
+  }
 }

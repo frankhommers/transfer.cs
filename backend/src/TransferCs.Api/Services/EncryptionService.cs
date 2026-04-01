@@ -6,65 +6,85 @@ namespace TransferCs.Api.Services;
 
 public static class EncryptionService
 {
-    public static async Task<Stream> EncryptAsync(Stream plaintext, string password)
+  /// <summary>
+  /// Encrypts plaintext stream using PGP symmetric encryption.
+  /// Uses a temp file to avoid holding the entire file in memory.
+  /// </summary>
+  public static async Task<Stream> EncryptAsync(Stream plaintext, string password)
+  {
+    if (string.IsNullOrEmpty(password))
+      return plaintext;
+
+    string tempPath = Path.Combine(Path.GetTempPath(), $"encrypt-{Guid.NewGuid():N}");
+    FileStream tempFile = new(tempPath, FileMode.Create, FileAccess.ReadWrite,
+      FileShare.None, 81920, FileOptions.DeleteOnClose);
+
+    try
     {
-        if (string.IsNullOrEmpty(password))
-            return plaintext;
+      // Note: ArmoredOutputStream does not close the underlying stream on dispose
+      await using (ArmoredOutputStream armoredStream = new(tempFile))
+      {
+        PgpEncryptedDataGenerator encGen = new(
+          SymmetricKeyAlgorithmTag.Aes256, true, new SecureRandom());
+        encGen.AddMethod(password.ToCharArray(), HashAlgorithmTag.Sha256);
 
-        var output = new MemoryStream();
-
-        // Read the plaintext into a byte array for PGP literal data
-        using var plaintextMs = new MemoryStream();
-        await plaintext.CopyToAsync(plaintextMs);
-        var plaintextBytes = plaintextMs.ToArray();
-
-        await using (var armoredStream = new ArmoredOutputStream(output))
+        await using (Stream encOut = encGen.Open(armoredStream, new byte[81920]))
         {
-            var encGen = new PgpEncryptedDataGenerator(
-                SymmetricKeyAlgorithmTag.Aes256, true, new SecureRandom());
-            encGen.AddMethod(password.ToCharArray(), HashAlgorithmTag.Sha256);
-
-            // Build the literal data into a buffer first
-            using var literalBuffer = new MemoryStream();
-            var literalGen = new PgpLiteralDataGenerator();
-            await using (var literalOut = literalGen.Open(literalBuffer, PgpLiteralData.Binary, "_", DateTime.UtcNow, new byte[4096]))
-            {
-                await literalOut.WriteAsync(plaintextBytes);
-            }
-
-            var literalBytes = literalBuffer.ToArray();
-
-            await using (var encOut = encGen.Open(armoredStream, literalBytes.Length))
-            {
-                await encOut.WriteAsync(literalBytes);
-            }
+          PgpLiteralDataGenerator literalGen = new();
+          await using (Stream literalOut =
+            literalGen.Open(encOut, PgpLiteralData.Binary, "_", DateTime.UtcNow, new byte[81920]))
+          {
+            await plaintext.CopyToAsync(literalOut);
+          }
         }
+      }
 
-        output.Position = 0;
-        return output;
+      tempFile.Position = 0;
+      return tempFile;
     }
-
-    public static async Task<Stream> DecryptAsync(Stream ciphertext, string password)
+    catch
     {
-        if (string.IsNullOrEmpty(password))
-            return ciphertext;
-
-        await using var armoredStream = new ArmoredInputStream(ciphertext);
-        var factory = new PgpObjectFactory(armoredStream);
-        var encList = (PgpEncryptedDataList)factory.NextPgpObject();
-        var pbeData = (PgpPbeEncryptedData)encList[0];
-
-        await using var clear = pbeData.GetDataStream(password.ToCharArray());
-        var plainFactory = new PgpObjectFactory(clear);
-        var literalData = (PgpLiteralData)plainFactory.NextPgpObject();
-
-        var output = new MemoryStream();
-        await using (var unc = literalData.GetInputStream())
-        {
-            await unc.CopyToAsync(output);
-        }
-
-        output.Position = 0;
-        return output;
+      await tempFile.DisposeAsync();
+      throw;
     }
+  }
+
+  /// <summary>
+  /// Decrypts a PGP-encrypted stream using the password.
+  /// Uses a temp file to avoid holding the entire file in memory.
+  /// </summary>
+  public static async Task<Stream> DecryptAsync(Stream ciphertext, string password)
+  {
+    if (string.IsNullOrEmpty(password))
+      return ciphertext;
+
+    await using ArmoredInputStream armoredStream = new(ciphertext);
+    PgpObjectFactory factory = new(armoredStream);
+    PgpEncryptedDataList encList = (PgpEncryptedDataList)factory.NextPgpObject();
+    PgpPbeEncryptedData pbeData = (PgpPbeEncryptedData)encList[0];
+
+    await using Stream clear = pbeData.GetDataStream(password.ToCharArray());
+    PgpObjectFactory plainFactory = new(clear);
+    PgpLiteralData literalData = (PgpLiteralData)plainFactory.NextPgpObject();
+
+    string tempPath = Path.Combine(Path.GetTempPath(), $"decrypt-{Guid.NewGuid():N}");
+    FileStream tempFile = new(tempPath, FileMode.Create, FileAccess.ReadWrite,
+      FileShare.None, 81920, FileOptions.DeleteOnClose);
+
+    try
+    {
+      await using (Stream unc = literalData.GetInputStream())
+      {
+        await unc.CopyToAsync(tempFile);
+      }
+
+      tempFile.Position = 0;
+      return tempFile;
+    }
+    catch
+    {
+      await tempFile.DisposeAsync();
+      throw;
+    }
+  }
 }

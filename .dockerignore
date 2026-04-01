@@ -1,0 +1,16 @@
+.git
+.idea
+.vs
+.DS_Store
+
+# Frontend deps/build (rebuilt in Docker)
+frontend/node_modules
+frontend/build
+frontend/dist
+
+# Backend build artifacts
+backend/**/bin
+backend/**/obj
+backend/**/data
+
+Dockerfile

@@ -1,42 +1,46 @@
+using Microsoft.Extensions.Options;
+using TransferCs.Api.Configuration;
 using TransferCs.Api.Helpers;
 
 namespace TransferCs.Api.Endpoints;
 
 public static class ViewEndpoints
 {
-    public static WebApplication MapViewEndpoints(this WebApplication app)
+  public static WebApplication MapViewEndpoints(this WebApplication app)
+  {
+    app.MapGet("/", HandleRoot);
+    return app;
+  }
+
+  private static IResult HandleRoot(HttpRequest request, IWebHostEnvironment env, IOptions<TransferCsOptions> opts)
+  {
+    if (AcceptHelper.AcceptsHtml(request))
     {
-        app.MapGet("/", HandleRoot);
-        return app;
+      string indexPath = Path.Combine(env.WebRootPath ?? "wwwroot", "index.html");
+      return Results.File(indexPath, "text/html");
     }
 
-    private static IResult HandleRoot(HttpRequest request)
-    {
-        if (AcceptHelper.AcceptsHtml(request))
-        {
-            return Results.Redirect("/index.html");
-        }
-
-        var usage = """
-                    transfer.sh - Easy file sharing from the command line
+    string title = opts.Value.Title;
+    string baseUrl = $"{request.Scheme}://{request.Host}";
+    string usage = $"""
+                    {title} - Easy file sharing from the command line
 
                     Usage:
-                      Upload:    curl --upload-file ./hello.txt https://transfer.sh/hello.txt
-                      Download:  curl https://transfer.sh/<token>/hello.txt -o hello.txt
-                      Delete:    curl -X DELETE https://transfer.sh/<token>/hello.txt/<deletion-token>
+                      Upload:    curl --upload-file ./hello.txt {baseUrl}/hello.txt
+                      Download:  curl {baseUrl}/<token>/hello.txt -o hello.txt
+                      Delete:    curl -X DELETE {baseUrl}/<token>/hello.txt/<deletion-token>
 
                     Options:
                       Max-Downloads: 1              Maximum number of downloads
-                      Max-Days: 1                   Maximum number of days to keep file
+                      Expires: 7d                   Expires in 7 days (supports: 1d12h, 30m, 3600s, or a date)
 
                     Examples:
-                      curl --upload-file ./hello.txt https://transfer.sh/hello.txt
-                      curl -X PUT --upload-file ./hello.txt https://transfer.sh/hello.txt
-                      curl -H "Max-Downloads: 1" --upload-file ./hello.txt https://transfer.sh/hello.txt
-
-                    Powered by transfer.sh - https://github.com/dutcoders/transfer.sh
+                      curl --upload-file ./hello.txt {baseUrl}/hello.txt
+                      curl -H "Expires: 7d" --upload-file ./hello.txt {baseUrl}/hello.txt
+                      curl -H "Expires: 1d12h" --upload-file ./hello.txt {baseUrl}/hello.txt
+                      curl -H "Max-Downloads: 1" --upload-file ./hello.txt {baseUrl}/hello.txt
                     """;
 
-        return Results.Text(usage, "text/plain");
-    }
+    return Results.Text(usage, "text/plain");
+  }
 }

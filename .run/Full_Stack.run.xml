@@ -1,0 +1,6 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Full Stack" type="CompoundRunConfigurationType">
+    <toRun name="Backend Watched" type="RunDotNetWatch" />
+    <toRun name="Frontend" type="ShConfigurationType" />
+  </configuration>
+</component>

@@ -2,72 +2,73 @@ using Microsoft.Extensions.Options;
 using QRCoder;
 using TransferCs.Api.Configuration;
 using TransferCs.Api.Helpers;
+using TransferCs.Api.Models;
 using TransferCs.Api.Services;
 
 namespace TransferCs.Api.Endpoints;
 
 public static class PreviewEndpoints
 {
-    public static WebApplication MapPreviewEndpoints(this WebApplication app)
+  public static WebApplication MapPreviewEndpoints(this WebApplication app)
+  {
+    app.MapGet("/api/preview/{token}/{filename}", HandlePreviewAsync);
+    return app;
+  }
+
+  private static async Task<IResult> HandlePreviewAsync(
+    string token,
+    string filename,
+    HttpRequest request,
+    MetadataService metadataService,
+    IOptions<TransferCsOptions> optionsAccessor,
+    CancellationToken ct)
+  {
+    TransferCsOptions options = optionsAccessor.Value;
+    FileMetadata? metadata = await metadataService.LoadAsync(token, filename, ct);
+    if (metadata == null)
+      return Results.NotFound();
+
+    string url = UrlHelper.ResolveUrl(request, $"/{token}/{filename}", options);
+    string downloadUrl = UrlHelper.ResolveUrl(request, $"/download/{token}/{filename}", options);
+
+    // Generate QR code
+    string qrCodeBase64;
+    using (QRCodeGenerator qrGenerator = new())
     {
-        app.MapGet("/api/preview/{token}/{filename}", HandlePreview);
-        return app;
+      QRCodeData qrData = qrGenerator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+      PngByteQRCode qrCode = new(qrData);
+      byte[] qrBytes = qrCode.GetGraphic(5);
+      qrCodeBase64 = Convert.ToBase64String(qrBytes);
     }
 
-    private static async Task<IResult> HandlePreview(
-        string token,
-        string filename,
-        HttpRequest request,
-        MetadataService metadataService,
-        IOptions<TransferCsOptions> optionsAccessor,
-        CancellationToken ct)
+    string previewType = GetPreviewType(metadata.ContentType);
+
+    return Results.Json(new Models.PreviewResult
     {
-        var options = optionsAccessor.Value;
-        var metadata = await metadataService.LoadAsync(token, filename, ct);
-        if (metadata == null)
-            return Results.NotFound();
+      ContentType = metadata.ContentType,
+      Filename = filename,
+      Url = url,
+      DownloadUrl = downloadUrl,
+      Token = token,
+      Hostname = request.Host.ToString(),
+      ContentLength = metadata.ContentLength,
+      QrCode = qrCodeBase64,
+      PreviewType = previewType
+    }, Models.AppJsonContext.Default.PreviewResult);
+  }
 
-        var url = UrlHelper.ResolveUrl(request, $"/{token}/{filename}", options);
-        var downloadUrl = UrlHelper.ResolveUrl(request, $"/download/{token}/{filename}", options);
-
-        // Generate QR code
-        string qrCodeBase64;
-        using (var qrGenerator = new QRCodeGenerator())
-        {
-            var qrData = qrGenerator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
-            var qrCode = new PngByteQRCode(qrData);
-            var qrBytes = qrCode.GetGraphic(5);
-            qrCodeBase64 = Convert.ToBase64String(qrBytes);
-        }
-
-        var previewType = GetPreviewType(metadata.ContentType);
-
-        return Results.Json(new
-        {
-            contentType = metadata.ContentType,
-            filename,
-            url,
-            downloadUrl,
-            token,
-            hostname = request.Host.ToString(),
-            contentLength = metadata.ContentLength,
-            qrCode = qrCodeBase64,
-            previewType
-        });
-    }
-
-    private static string GetPreviewType(string contentType)
-    {
-        if (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-            return "image";
-        if (contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
-            return "video";
-        if (contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
-            return "audio";
-        if (contentType.Contains("markdown", StringComparison.OrdinalIgnoreCase))
-            return "markdown";
-        if (contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase))
-            return "text";
-        return "generic";
-    }
+  private static string GetPreviewType(string contentType)
+  {
+    if (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+      return "image";
+    if (contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+      return "video";
+    if (contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+      return "audio";
+    if (contentType.Contains("markdown", StringComparison.OrdinalIgnoreCase))
+      return "markdown";
+    if (contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase))
+      return "text";
+    return "generic";
+  }
 }
