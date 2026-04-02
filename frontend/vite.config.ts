@@ -62,6 +62,10 @@ export default defineConfig({
                 target: backendUrl,
                 changeOrigin: false,
             },
+            '/transfer.sh': {
+                target: backendUrl,
+                changeOrigin: false,
+            },
         },
     },
     build: {

@@ -1,6 +1,3 @@
-import {useState} from 'react'
-import {Icon} from '@mdi/react'
-import {mdiBookOpenVariant, mdiChevronDown} from '@mdi/js'
 import {CodeBlock} from '@/components/CodeBlock'
 
 interface Example {
@@ -9,8 +6,6 @@ interface Example {
 }
 
 export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
-  const [open, setOpen] = useState(false)
-
   const examples: Example[] = [
     {
       title: 'Upload',
@@ -87,34 +82,13 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
   ]
 
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center gap-2 w-full text-left group"
-      >
-        <Icon path={mdiBookOpenVariant} size={0.75} className="text-muted-foreground shrink-0"/>
-        <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">More Examples</span>
-        <Icon
-          path={mdiChevronDown}
-          size={0.625}
-          className={[
-            'text-muted-foreground transition-transform ml-auto',
-            open ? 'rotate-180' : '',
-          ].join(' ')}
-        />
-      </button>
-
-      {open && (
-        <div className="mt-6 space-y-6">
-          {examples.map((ex, i) => (
-            <div key={i} className="space-y-2">
-              <h3 className="text-sm font-medium text-muted-foreground">{ex.title}</h3>
-              <CodeBlock code={ex.code}/>
-            </div>
-          ))}
+    <div className="space-y-4">
+      {examples.map((ex, i) => (
+        <div key={i} className="space-y-1">
+          <h3 className="text-sm font-medium text-muted-foreground">{ex.title}</h3>
+          <CodeBlock code={ex.code}/>
         </div>
-      )}
+      ))}
     </div>
   )
 }

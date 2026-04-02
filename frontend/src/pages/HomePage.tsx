@@ -1,6 +1,6 @@
 import {useState} from 'react'
 import {Icon} from '@mdi/react'
-import {mdiRobotHappy, mdiContentCopy, mdiCheck, mdiGithub, mdiConsole, mdiChevronDown, mdiDownloadBox} from '@mdi/js'
+import {mdiRobotHappy, mdiContentCopy, mdiCheck, mdiGithub, mdiConsole, mdiChevronDown} from '@mdi/js'
 import {UploadDropzone} from '@/components/UploadDropzone'
 import {CommandComposer} from '@/components/CommandComposer'
 import {ExampleSnippets} from '@/components/ExampleSnippets'
@@ -8,11 +8,14 @@ import {CodeBlock} from '@/components/CodeBlock'
 import {Separator} from '@/components/ui/separator'
 import {useConfig} from '@/hooks/useConfig'
 
+type CliTab = 'install' | 'builder' | 'examples'
+
 export function HomePage() {
     const baseUrl = window.location.origin
     const config = useConfig()
     const [copied, setCopied] = useState(false)
     const [cliOpen, setCliOpen] = useState(false)
+    const [cliTab, setCliTab] = useState<CliTab>('install')
     const skillUrl = `${baseUrl}/SKILL.md`
 
     const copySkillUrl = async () => {
@@ -20,6 +23,12 @@ export function HomePage() {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
     }
+
+    const tabs: { key: CliTab; label: string }[] = [
+        {key: 'install', label: 'Install'},
+        {key: 'builder', label: 'Builder'},
+        {key: 'examples', label: 'Examples'},
+    ]
 
     return (
         <div className="min-h-screen bg-background">
@@ -35,25 +44,14 @@ export function HomePage() {
 
                 <Separator className="my-8"/>
 
-                {/* Install CLI */}
-                <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                        <Icon path={mdiDownloadBox} size={0.75} className="text-muted-foreground shrink-0"/>
-                        <span className="text-sm font-medium text-muted-foreground">Install CLI</span>
-                    </div>
-                    <CodeBlock code={`curl -sL ${baseUrl}/install.sh > ~/.local/bin/transfer && chmod +x ~/.local/bin/transfer`}/>
-                </div>
-
-                <Separator className="my-8"/>
-
-                {/* Command Builder - collapsible */}
+                {/* Command Line - collapsible with tabs */}
                 <button
                     type="button"
                     onClick={() => setCliOpen((prev) => !prev)}
                     className="flex items-center gap-2 w-full text-left group"
                 >
                     <Icon path={mdiConsole} size={0.75} className="text-muted-foreground shrink-0"/>
-                    <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Command Builder</span>
+                    <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Command Line</span>
                     <Icon
                         path={mdiChevronDown}
                         size={0.625}
@@ -65,15 +63,49 @@ export function HomePage() {
                 </button>
 
                 {cliOpen && (
-                    <div className="mt-6">
-                        <CommandComposer baseUrl={baseUrl}/>
+                    <div className="mt-4">
+                        {/* Tabs */}
+                        <div className="flex gap-1 border-b border-border mb-6">
+                            {tabs.map((t) => (
+                                <button
+                                    key={t.key}
+                                    type="button"
+                                    onClick={() => setCliTab(t.key)}
+                                    className={[
+                                        'px-4 py-2 text-sm font-medium transition-colors -mb-px',
+                                        cliTab === t.key
+                                            ? 'text-foreground border-b-2 border-primary'
+                                            : 'text-muted-foreground hover:text-foreground',
+                                    ].join(' ')}
+                                >
+                                    {t.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Tab content */}
+                        {cliTab === 'install' && (
+                            <div className="space-y-4">
+                                <CodeBlock code={`curl -fsSL ${baseUrl}/install.sh | bash`}/>
+                                <p className="text-sm text-muted-foreground">
+                                    Installs the <code className="font-mono">transfer</code> command to <code className="font-mono">~/.local/bin</code>.
+                                </p>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-muted-foreground block">Usage</label>
+                                    <CodeBlock code={`transfer hello.txt\ntransfer ./my-directory/\ntransfer hello.txt -e 7d -d 5\ntransfer secret.txt -p mypassword`}/>
+                                </div>
+                            </div>
+                        )}
+
+                        {cliTab === 'builder' && (
+                            <CommandComposer baseUrl={baseUrl}/>
+                        )}
+
+                        {cliTab === 'examples' && (
+                            <ExampleSnippets baseUrl={baseUrl}/>
+                        )}
                     </div>
                 )}
-
-                <Separator className="my-8"/>
-
-                {/* Examples - separate collapsible */}
-                <ExampleSnippets baseUrl={baseUrl}/>
 
                 <Separator className="my-8"/>
 

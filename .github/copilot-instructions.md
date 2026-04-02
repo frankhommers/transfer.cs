@@ -20,6 +20,7 @@ onsider other possibilities to achieve the result, do not be limited by the prom
 - **UI:** If the application is a UI application, you can not run it to test it, so ask the user to test for you.
 - **Secrets:** Keep them out of the code and out of source control at ALL times!
 - **Backward compatibility:** Don't assume that the code needs to be backward compatible, ask the user.
+- **Generated Code:** Never manually edit generated code or files (e.g., code from scaffolding tools, ORM migrations, API client generators, or build outputs). If generated code contains issues, fix them in the generation process, templates, or configuration — not in the output. If you are unsure whether a file is generated, check for auto-generation headers or ask the user.
 
 ## Development Best Practices
 - Follow the project's existing conventions and patterns
@@ -291,6 +292,299 @@ public class UserService
     await _userRepository.GetByIdAsync(id);
 }
 ```
+
+
+# Frontend Development — React + Vite + shadcn/ui
+
+You build frontend applications using React with Vite, styled with Tailwind CSS v4 and shadcn/ui components.
+
+## Project Initialization
+
+1. **Always ask for a shadcn preset ID** before initializing a new project. A preset defines the base theme, color system, and component configuration.
+2. Initialize with the preset:
+   ```bash
+   bunx shadcn@latest init --preset <preset-id>
+   ```
+   If no preset is specified, use the default preset: `b1VlIttI`, confirm this with the user.
+   ```bash
+   bunx shadcn@latest init --preset b1VlIttI
+   ```
+3. Use **Bun** for all package management and script execution:
+   - `bun install` — install dependencies
+   - `bun run dev` — start dev server
+   - `bun run build` — production build
+   - `bun run test` — run tests
+   - `bunx` — execute packages (instead of `npx`)
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Framework** | React 19 with TypeScript |
+| **Build Tool** | Vite (latest) with `@vitejs/plugin-react` |
+| **Package Manager** | Bun |
+| **CSS** | Tailwind CSS v4 via `@tailwindcss/vite` plugin (not PostCSS) |
+| **UI Components** | shadcn/ui with `class-variance-authority` |
+| **Icons** | Lucide React |
+| **Routing** | React Router DOM |
+| **Testing** | Vitest + @testing-library/react + jsdom |
+
+## Styling
+
+1. **Tailwind CSS v4 as Vite plugin** — use `@tailwindcss/vite`, not the PostCSS integration.
+2. **OKLCH color system** — use OKLCH color space for all CSS custom properties.
+3. **Dark mode via data attribute** — use `data-theme="dark"` on `:root`, not Tailwind's default media query approach. Define a custom variant:
+   ```css
+   @custom-variant dark (&:is([data-theme="dark"] *));
+   ```
+4. **`cn()` utility** — every project must have `src/lib/utils.ts` exporting:
+   ```typescript
+   import { clsx, type ClassValue } from "clsx"
+   import { twMerge } from "tailwind-merge"
+
+   export function cn(...inputs: ClassValue[]) {
+     return twMerge(clsx(inputs))
+   }
+   ```
+5. **shadcn theme inline pattern** — map colors via `@theme inline { }` blocks so Tailwind utilities respond to runtime theme changes.
+
+## Component Conventions
+
+- Use **shadcn/ui** as the base component library. Add components with `bunx shadcn@latest add <component>`.
+- Store shadcn primitives in `src/components/ui/` (e.g., `button.tsx`, `card.tsx`, `input.tsx`).
+- Build custom components on top of shadcn primitives in `src/components/`.
+- Always use the `cn()` utility for conditional class merging.
+- Co-locate test files next to source files (e.g., `button.test.tsx` next to `button.tsx`).
+
+## Finding Existing shadcn/ui Components
+
+Before building any non-trivial UI component from scratch, **always check** the awesome-shadcn-ui list for existing solutions:
+
+**Source:** https://raw.githubusercontent.com/birobirobiro/awesome-shadcn-ui/refs/heads/main/README.md
+
+Fetch this list and search it when you need components such as:
+- Date/time pickers, calendars, date range selectors
+- File uploaders, image croppers
+- Data tables with sorting, filtering, pagination
+- Rich text / WYSIWYG editors
+- Multi-select, combobox, autocomplete inputs
+- Charts, dashboards, kanban boards
+- Phone inputs, color pickers, address autocomplete
+- Drag-and-drop, sortable lists
+- Modals, drawers, steppers, tours
+- Any specialized or complex UI component
+
+**Process:**
+1. Fetch the awesome-shadcn-ui README from the URL above.
+2. Search the list for components matching the requirement.
+3. Present matching options to the user with a brief description of each.
+4. Let the user choose which component to integrate (or decide to build custom).
+5. Install the chosen component following its documentation.
+
+Prefer existing, maintained components over building from scratch. Only build custom when no suitable option exists or when the existing options don't fit the requirements.
+
+## Project Structure
+
+```
+src/
+  main.tsx                  — Entry point
+  App.tsx                   — Root component with routing
+  styles.css                — Global styles, theme variables, Tailwind imports
+  components/
+    ui/                     — shadcn/ui primitives
+    [feature-components]    — Custom components
+  hooks/                    — Custom React hooks
+  lib/
+    utils.ts                — cn() utility
+  pages/                    — Route-level page components
+  test/
+    setup.ts                — Test setup (vitest + testing-library)
+```
+
+## Build & Testing
+
+- **Vite config** must include `@vitejs/plugin-react` and `@tailwindcss/vite`.
+- **Vitest** with `jsdom` environment for component testing.
+- **@testing-library/react** + **@testing-library/jest-dom** for assertions.
+- All packages use `"type": "module"` (ESM only).
+- Standard scripts in `package.json`:
+  ```json
+  {
+    "scripts": {
+      "dev": "vite",
+      "test": "vitest run",
+      "build": "tsc -b && vite build",
+      "preview": "vite preview"
+    }
+  }
+  ```
+
+## File Naming
+
+- **PascalCase** for React component files (`ToolLayout.tsx`, `SearchDropdown.tsx`).
+- **camelCase** for hooks (`useTheme.ts`), utilities (`utils.ts`), and config files.
+- **kebab-case** for directories and non-component files.
+- See `typescript.md` for general TypeScript naming and language conventions.
+
+
+# Full-Stack Project Structure — C# + React + Rider
+
+You build full-stack applications with a C# backend and a React frontend in a single repository, using JetBrains Rider as IDE.
+
+## Solution & Project Format
+
+- Use the **`.slnx`** XML solution format (not the legacy `.sln` text format).
+- Target **net10.0** (or latest stable .NET).
+- The frontend is included in the solution via a **`.esproj`** file so it appears in Rider's Solution Explorer.
+
+## Directory Structure
+
+```
+ProjectName/
+  .run/                                  — Rider run configurations
+    Backend.run.xml                      — Debug backend (with debugger)
+    Full_Stack.run.xml                   — Run backend + frontend together
+  backend/
+    src/
+      ProjectName.Api/                   — ASP.NET API project
+        Program.cs
+        ProjectName.Api.csproj
+      ProjectName.Core/                  — Domain/business logic (optional, for larger projects)
+      ProjectName.Data/                  — Data access layer (optional, for larger projects)
+      ProjectName.Migrations/            — Database migrations (optional, when using migrations)
+    tests/
+      ProjectName.Tests/                 — Test project
+      ProjectName.Api.Tests/             — Alternative: API-specific tests
+  frontend/
+    src/                                 — React source code (standard Vite convention)
+      App.tsx
+      main.tsx
+      components/
+      hooks/
+      lib/
+      pages/
+    public/                              — Static assets
+    index.html
+    vite.config.ts
+    package.json
+    tsconfig.json
+    ProjectName.Frontend.esproj          — .NET esproj for solution integration
+  start-dev.sh                           — Starts backend + frontend in one terminal
+  docker-compose.yml                     — Postgres + app service (when applicable)
+  Dockerfile
+  ProjectName.slnx                       — XML-format solution file
+  CLAUDE.md / AGENTS.md / CODEX.md / GEMINI.md
+  docs/
+```
+
+### When to Add Extra Backend Projects
+
+- **Simple projects**: single `ProjectName.Api` project under `backend/src/` is sufficient.
+- **Larger projects**: split into `Api`, `Core`, `Data`, and `Migrations` projects under `backend/src/` for clean architecture layering.
+- Always keep **tests** in `backend/tests/` separate from production code.
+
+## Rider Launch Profiles
+
+Every project must have two run configurations in the `.run/` directory at the repo root. These are committed to git so all developers share the same setup.
+
+### Backend.run.xml
+
+Runs the .NET API project with debugger attached (no hot reload). Use this when you need breakpoints:
+
+```xml
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Backend" type="DotNetProject" factoryName=".NET Project">
+    <option name="EXE_PATH" value="" />
+    <option name="PROGRAM_PARAMETERS" value="" />
+    <option name="WORKING_DIRECTORY" value="" />
+    <option name="PASS_PARENT_ENVS" value="1" />
+    <option name="ENV_FILE_PATHS" value="" />
+    <option name="REDIRECT_INPUT_PATH" value="" />
+    <option name="MIXED_MODE_DEBUG" value="0" />
+    <option name="USE_MONO" value="0" />
+    <option name="RUNTIME_ARGUMENTS" value="" />
+    <option name="AUTO_ATTACH_CHILDREN" value="0" />
+    <option name="PROJECT_PATH" value="$PROJECT_DIR$/backend/src/ProjectName.Api/ProjectName.Api.csproj" />
+    <option name="PROJECT_EXE_PATH_TRACKING" value="1" />
+    <option name="PROJECT_ARGUMENTS_TRACKING" value="1" />
+    <option name="PROJECT_WORKING_DIRECTORY_TRACKING" value="1" />
+    <option name="PROJECT_KIND" value="None" />
+    <option name="PROJECT_TFM" value="net10.0" />
+    <method v="2" />
+  </configuration>
+</component>
+```
+
+### Full_Stack.run.xml
+
+Runs backend (with hot reload) + frontend together via a single `start-dev.sh` script. One terminal tab, Ctrl+C stops everything. This is the default development workflow:
+
+```xml
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Full Stack" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="" />
+    <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+    <option name="SCRIPT_PATH" value="$PROJECT_DIR$/start-dev.sh" />
+    <option name="SCRIPT_OPTIONS" value="" />
+    <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+    <option name="INTERPRETER_PATH" value="/bin/zsh" />
+    <option name="INTERPRETER_OPTIONS" value="" />
+    <option name="EXECUTE_IN_TERMINAL" value="true" />
+    <option name="EXECUTE_SCRIPT_FILE" value="true" />
+    <envs />
+    <method v="2" />
+  </configuration>
+</component>
+```
+
+### start-dev.sh
+
+Every project must have a `start-dev.sh` at the repo root that starts both backend and frontend in a single process. Ctrl+C stops everything cleanly:
+
+```bash
+#!/bin/zsh
+set -euo pipefail
+
+BACKEND_PORT=<backend-port>
+FRONTEND_PORT=<frontend-port>
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Kill existing processes on both ports
+lsof -ti TCP:"$BACKEND_PORT" | xargs kill -9 2>/dev/null || true
+lsof -ti TCP:"$FRONTEND_PORT" | xargs kill -9 2>/dev/null || true
+sleep 1
+
+# Start frontend in background
+echo "Starting frontend on :$FRONTEND_PORT..."
+cd "$DIR/frontend"
+bun run dev &
+FRONTEND_PID=$!
+
+# Start backend in foreground (Ctrl+C stops everything)
+echo "Starting backend on :$BACKEND_PORT..."
+cd "$DIR/backend/src/ProjectName.Api"
+
+trap "kill $FRONTEND_PID 2>/dev/null; exit" INT TERM
+dotnet watch run
+```
+
+Make executable: `chmod +x start-dev.sh`
+
+### Hot Reload Summary
+
+| Layer | Method | Run Configuration |
+|---|---|---|
+| **Backend only** | Rider debugger (no hot reload) | Backend |
+| **Full Stack** | `dotnet watch` + Vite HMR via `start-dev.sh` | Full Stack |
+
+- Use **Full Stack** as the default run configuration during development u2014 one terminal tab, hot reload on both sides.
+- Use **Backend** when you need to attach a debugger or step through code.
+
+## http/tcp Ports
+
+- The frontend uses base port 3000 + index, and the backend uses port 5000 + index, ask the user the index.
 
 
 
