@@ -2,12 +2,12 @@ import {useState} from 'react'
 import {Icon} from '@mdi/react'
 import {
   mdiClockOutline, mdiDownload, mdiLock, mdiShieldLock,
-  mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip, mdiProgressHelper, mdiFolder,
+  mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip, mdiProgressHelper, mdiFolder, mdiConsoleLine,
 } from '@mdi/js'
 import {CodeBlock} from '@/components/CodeBlock'
 import {Input} from '@/components/ui/input'
 
-type Mode = 'single' | 'multiple' | 'archive'
+type Mode = 'single' | 'multiple' | 'archive' | 'cli'
 
 interface HeaderOption {
   key: string
@@ -29,6 +29,7 @@ const modes: { key: Mode; label: string; icon: string }[] = [
   {key: 'single', label: 'Single file', icon: mdiFile},
   {key: 'multiple', label: 'Multiple files', icon: mdiFileMultiple},
   {key: 'archive', label: 'Archive (tar)', icon: mdiArchive},
+  {key: 'cli', label: 'transfer CLI', icon: mdiConsoleLine},
 ]
 
 function buildHeaderFlags(headerOpts: HeaderOption[], active: Record<string, boolean>, values: Record<string, string>): string {
@@ -141,6 +142,17 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
     } else {
       downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
     }
+  } else {
+    // cli mode
+    const file = filename || 'hello.txt'
+    const cliFlags: string[] = []
+    if (active['expires'] && (values['expires'] || 'default')) cliFlags.push(`-e ${values['expires'] || '7d'}`)
+    if (active['maxDownloads'] && (values['maxDownloads'] || 'default')) cliFlags.push(`-d ${values['maxDownloads'] || '1'}`)
+    if (active['customToken'] && values['customToken']) cliFlags.push(`-t ${values['customToken']}`)
+    if (active['serverEncrypt'] && (values['serverEncrypt'] || 'default')) cliFlags.push(`-p ${values['serverEncrypt'] || 'password'}`)
+    const flags = cliFlags.length > 0 ? ' ' + cliFlags.join(' ') : ''
+    uploadCmd = `transfer ${file}${flags}`
+    downloadCmd = `curl ${baseUrl}/${tokenSlug}/${file} -o ./${file}`
   }
 
   // Inject --progress-bar into curl commands
@@ -159,8 +171,10 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
             type="button"
             onClick={() => {
               setMode(m.key)
-              if (m.key === 'multiple') {
+              if (m.key === 'multiple' || m.key === 'cli') {
                 setClientGpg(false)
+              }
+              if (m.key === 'multiple') {
                 setActive((prev) => ({...prev, customToken: false}))
               }
             }}
@@ -178,13 +192,15 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
       </div>
 
       {/* Mode-specific inputs */}
-      {mode === 'single' && (
+      {(mode === 'single' || mode === 'cli') && (
         <div>
-          <label className="text-sm font-medium text-muted-foreground mb-2 block">Filename</label>
+          <label className="text-sm font-medium text-muted-foreground mb-2 block">
+            {mode === 'cli' ? 'File or directory' : 'Filename'}
+          </label>
           <Input
             value={filename}
             onChange={(e) => setFilename(e.target.value)}
-            placeholder="hello.txt"
+            placeholder={mode === 'cli' ? 'hello.txt or ./my-directory/' : 'hello.txt'}
             className="font-mono"
           />
         </div>
@@ -328,36 +344,40 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
               </button>
             )
           })}
-          <button
-            type="button"
-            disabled={mode === 'multiple'}
-            onClick={() => setClientGpg((prev) => !prev)}
-            title={mode === 'multiple' ? 'GPG encryption is not compatible with multipart upload' : undefined}
-            className={[
-              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border',
-              mode === 'multiple'
-                ? 'bg-muted text-muted-foreground/40 border-border cursor-not-allowed'
-                : clientGpg
+          {mode !== 'cli' && (
+            <button
+              type="button"
+              disabled={mode === 'multiple'}
+              onClick={() => setClientGpg((prev) => !prev)}
+              title={mode === 'multiple' ? 'GPG encryption is not compatible with multipart upload' : undefined}
+              className={[
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border',
+                mode === 'multiple'
+                  ? 'bg-muted text-muted-foreground/40 border-border cursor-not-allowed'
+                  : clientGpg
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-muted text-muted-foreground border-border hover:border-primary/30',
+              ].join(' ')}
+            >
+              <Icon path={mdiShieldLock} size={0.625}/>
+              Client encrypt (GPG)
+            </button>
+          )}
+          {mode !== 'cli' && (
+            <button
+              type="button"
+              onClick={() => setShowProgress((prev) => !prev)}
+              className={[
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border',
+                showProgress
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-muted text-muted-foreground border-border hover:border-primary/30',
-            ].join(' ')}
-          >
-            <Icon path={mdiShieldLock} size={0.625}/>
-            Client encrypt (GPG)
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowProgress((prev) => !prev)}
-            className={[
-              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border',
-              showProgress
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'bg-muted text-muted-foreground border-border hover:border-primary/30',
-            ].join(' ')}
-          >
-            <Icon path={mdiProgressHelper} size={0.625}/>
-            Show progress
-          </button>
+              ].join(' ')}
+            >
+              <Icon path={mdiProgressHelper} size={0.625}/>
+              Show progress
+            </button>
+          )}
         </div>
 
         {headerOptions.filter((o) => active[o.key]).map((o) => (

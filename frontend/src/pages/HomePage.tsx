@@ -1,9 +1,10 @@
 import {useState} from 'react'
 import {Icon} from '@mdi/react'
-import {mdiRobotHappy, mdiContentCopy, mdiCheck, mdiGithub, mdiConsole, mdiChevronDown} from '@mdi/js'
+import {mdiRobotHappy, mdiContentCopy, mdiCheck, mdiGithub, mdiConsole, mdiChevronDown, mdiDownloadBox} from '@mdi/js'
 import {UploadDropzone} from '@/components/UploadDropzone'
 import {CommandComposer} from '@/components/CommandComposer'
 import {ExampleSnippets} from '@/components/ExampleSnippets'
+import {CodeBlock} from '@/components/CodeBlock'
 import {Separator} from '@/components/ui/separator'
 import {useConfig} from '@/hooks/useConfig'
 
@@ -32,15 +33,27 @@ export function HomePage() {
 
                 <UploadDropzone/>
 
-                <Separator className="my-12"/>
+                <Separator className="my-8"/>
 
+                {/* Install CLI */}
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Icon path={mdiDownloadBox} size={0.75} className="text-muted-foreground shrink-0"/>
+                        <span className="text-sm font-medium text-muted-foreground">Install CLI</span>
+                    </div>
+                    <CodeBlock code={`curl -sL ${baseUrl}/install.sh > ~/.local/bin/transfer && chmod +x ~/.local/bin/transfer`}/>
+                </div>
+
+                <Separator className="my-8"/>
+
+                {/* Command Builder - collapsible */}
                 <button
                     type="button"
                     onClick={() => setCliOpen((prev) => !prev)}
                     className="flex items-center gap-2 w-full text-left group"
                 >
                     <Icon path={mdiConsole} size={0.75} className="text-muted-foreground shrink-0"/>
-                    <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Command Line Usage</span>
+                    <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Command Builder</span>
                     <Icon
                         path={mdiChevronDown}
                         size={0.625}
@@ -57,11 +70,12 @@ export function HomePage() {
                     </div>
                 )}
 
-                <Separator className="my-12"/>
+                <Separator className="my-8"/>
 
+                {/* Examples - separate collapsible */}
                 <ExampleSnippets baseUrl={baseUrl}/>
 
-                <Separator className="my-12"/>
+                <Separator className="my-8"/>
 
                 <div className="flex items-center justify-between">
                     <p className="flex items-center gap-2 text-sm text-muted-foreground">
