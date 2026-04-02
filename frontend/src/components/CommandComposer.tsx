@@ -121,8 +121,7 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
       const bundleFiles = fileList.map((f) => `${tokenSlug}/${f}`).join(',')
       downloadCmd = `curl "${baseUrl}/bundle.zip?files=${bundleFiles}" -o bundle.zip`
     }
-  } else {
-    // archive mode
+  } else if (mode === 'archive') {
     const name = archiveName || 'files'
     const ext = gzip ? 'tar.gz' : 'tar'
     const tarFlag = gzip ? 'czf' : 'cf'
