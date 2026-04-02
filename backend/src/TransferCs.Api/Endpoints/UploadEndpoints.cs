@@ -70,6 +70,7 @@ public static class UploadEndpoints
     string contentType = MimeHelper.GetMimeType(sanitized);
 
     string tempPath = Path.Combine(options.TempPath, $"upload-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(options.TempPath);
     long contentLength;
 
     try

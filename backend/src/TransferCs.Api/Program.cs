@@ -56,12 +56,14 @@ if (!string.IsNullOrEmpty(config.CorsDomains))
   });
 }
 
-// Kestrel max request body size (default 30MB is too small for file uploads)
+// Kestrel limits for large file uploads
 builder.WebHost.ConfigureKestrel(options =>
 {
   options.Limits.MaxRequestBodySize = config.MaxUploadSizeBytes > 0
     ? config.MaxUploadSizeBytes
     : null; // null = unlimited
+  options.Limits.MinRequestBodyDataRate = null;
+  options.Limits.KeepAliveTimeout = TimeSpan.FromHours(24);
 });
 
 WebApplication app = builder.Build();
