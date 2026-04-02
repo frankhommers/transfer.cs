@@ -61,8 +61,12 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
       code: `curl -X POST -F "file=@a.txt" -F "file=@b.txt" ${baseUrl}/`,
     },
     {
-      title: 'Archive and upload',
+      title: 'Archive files and upload',
       code: `tar czf - *.txt | curl --upload-file - ${baseUrl}/files.tar.gz`,
+    },
+    {
+      title: 'Archive directory (preserve paths)',
+      code: `tar czf - -C ./my-directory . | curl --upload-file - ${baseUrl}/my-directory.tar.gz`,
     },
     {
       title: 'Download and extract archive',

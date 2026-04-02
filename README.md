@@ -140,7 +140,7 @@ All settings are configured via environment variables with the `TransferCs__` pr
 
 ## Deploy with Traefik
 
-Traefik is a common reverse proxy for Docker deployments. For large file uploads you need to configure buffering and timeouts.
+Traefik is a common reverse proxy for Docker deployments. transfer.cs streams uploads and downloads directly — **do not** use the Traefik `buffering` middleware, as it will buffer the entire request body and timeout on large files.
 
 ### docker-compose.yml
 
@@ -161,13 +161,7 @@ services:
       traefik.http.routers.transfer.entrypoints: websecure
       traefik.http.routers.transfer.tls.certresolver: letsencrypt
       traefik.http.services.transfer.loadbalancer.server.port: "8080"
-
-      # Large file support
-      traefik.http.middlewares.transfer-body.buffering.maxRequestBodyBytes: "10737418240"   # 10 GB
-      traefik.http.middlewares.transfer-body.buffering.maxResponseBodyBytes: "10737418240"  # 10 GB
-      traefik.http.middlewares.transfer-body.buffering.memRequestBodyBytes: "10485760"      # 10 MB memory buffer
-      traefik.http.middlewares.transfer-body.buffering.memResponseBodyBytes: "10485760"     # 10 MB memory buffer
-      traefik.http.routers.transfer.middlewares: transfer-body
+      traefik.http.services.transfer.loadbalancer.responseForwarding.flushInterval: "100ms"
     logging:
       driver: "json-file"
       options:
@@ -180,7 +174,7 @@ volumes:
 
 ### Traefik static configuration
 
-Make sure your Traefik entrypoint allows large requests. In `traefik.yml`:
+For large file transfers, increase the entrypoint timeouts in `traefik.yml`:
 
 ```yaml
 entryPoints:
@@ -194,6 +188,10 @@ entryPoints:
 ```
 
 Without these timeouts, Traefik will kill connections during large transfers (default is 60s).
+
+### Important: Custom headers
+
+transfer.cs uses custom request/response headers (`Token`, `Encrypt-Password`, `Expires`, `Max-Downloads`, etc.). Traefik passes these through by default. However, if you use a `headers` middleware with `customRequestHeaders` or `customResponseHeaders`, make sure you don't strip these headers. The `X-Url-Delete` response header is needed for clients to delete uploaded files.
 
 ### Traefik with file provider (non-Docker)
 
