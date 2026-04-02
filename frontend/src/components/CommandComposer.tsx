@@ -192,7 +192,10 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
 
       {/* Install hint for CLI mode */}
       {mode === 'cli' && (
-        <CodeBlock code={`curl -fsSL ${baseUrl}/install.sh | bash`}/>
+        <div>
+          <label className="text-sm font-medium text-muted-foreground mb-2 block">Install</label>
+          <CodeBlock code={`curl -fsSL ${baseUrl}/install.sh | bash`}/>
+        </div>
       )}
 
       {/* Mode-specific inputs */}
