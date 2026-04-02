@@ -13,7 +13,7 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
 
   const examples: Example[] = [
     {
-      title: 'Upload using curl',
+      title: 'Upload',
       code: `curl --upload-file ./hello.txt ${baseUrl}/hello.txt`,
     },
     {
@@ -33,36 +33,69 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
       code: `Invoke-WebRequest -Method PUT -InFile .\\file.txt ${baseUrl}/file.txt`,
     },
     {
-      title: 'Encrypt with GPG before upload',
-      code: `# Upload\ncat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" ${baseUrl}/secret.txt\n\n# Download and decrypt\ncurl ${baseUrl}/<token>/secret.txt | gpg -o- > ./secret.txt`,
+      title: 'Encrypt with GPG',
+      code: `cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" ${baseUrl}/secret.txt`,
+    },
+    {
+      title: 'Decrypt GPG download',
+      code: `curl ${baseUrl}/<token>/secret.txt | gpg -o- > ./secret.txt`,
     },
     {
       title: 'Encrypt with OpenSSL',
-      code: `# Upload\ncat ./secret.txt | openssl aes-256-cbc -pbkdf2 -e | curl -X PUT --upload-file "-" ${baseUrl}/secret.txt\n\n# Download and decrypt\ncurl ${baseUrl}/<token>/secret.txt | openssl aes-256-cbc -pbkdf2 -d > ./secret.txt`,
+      code: `cat ./secret.txt | openssl aes-256-cbc -pbkdf2 -e | curl -X PUT --upload-file "-" ${baseUrl}/secret.txt`,
     },
     {
-      title: 'Server-side encryption',
-      code: `# Upload with encryption\ncurl --upload-file ./secret.txt -H "X-Encrypt-Password: mypass" ${baseUrl}/secret.txt\n\n# Download and decrypt\ncurl -H "X-Decrypt-Password: mypass" ${baseUrl}/<token>/secret.txt -o ./secret.txt`,
+      title: 'Decrypt OpenSSL download',
+      code: `curl ${baseUrl}/<token>/secret.txt | openssl aes-256-cbc -pbkdf2 -d > ./secret.txt`,
+    },
+    {
+      title: 'Server-side encrypt upload',
+      code: `curl --upload-file ./secret.txt -H "X-Encrypt-Password: mypass" ${baseUrl}/secret.txt`,
+    },
+    {
+      title: 'Server-side decrypt download',
+      code: `curl -H "X-Decrypt-Password: mypass" ${baseUrl}/<token>/secret.txt -o ./secret.txt`,
     },
     {
       title: 'Upload multiple files',
       code: `curl -X POST -F "file=@a.txt" -F "file=@b.txt" ${baseUrl}/`,
     },
     {
-      title: 'Archive and upload a directory',
-      code: `tar czf - *.txt | curl --upload-file - ${baseUrl}/files.tar.gz\n\n# Download and extract\ncurl ${baseUrl}/<token>/files.tar.gz | tar xzf -`,
+      title: 'Archive and upload',
+      code: `tar czf - *.txt | curl --upload-file - ${baseUrl}/files.tar.gz`,
+    },
+    {
+      title: 'Download and extract archive',
+      code: `curl ${baseUrl}/<token>/files.tar.gz | tar xzf -`,
     },
     {
       title: 'Backup database, encrypt and transfer',
       code: `mysqldump --all-databases | gzip | gpg -ac -o- | curl -X PUT --upload-file "-" ${baseUrl}/db-backup.sql.gz`,
     },
     {
-      title: 'Scan for malware',
-      code: `# ClamAV scan\ncurl -X PUT --upload-file ./file.txt ${baseUrl}/file.txt/scan\n\n# VirusTotal scan\ncurl -X PUT --upload-file ./file.txt ${baseUrl}/file.txt/virustotal`,
+      title: 'ClamAV scan',
+      code: `curl -X PUT --upload-file ./file.txt ${baseUrl}/file.txt/scan`,
+    },
+    {
+      title: 'VirusTotal scan',
+      code: `curl -X PUT --upload-file ./file.txt ${baseUrl}/file.txt/virustotal`,
     },
     {
       title: 'Shell function for .bashrc / .zshrc',
-      code: `transfer() {\n  if [ $# -eq 0 ]; then\n    echo "Usage: transfer <file>" >&2\n    return 1\n  fi\n  file="$1"\n  basename=$(basename "$file")\n  if [ -d "$file" ]; then\n    basename="$basename.tar.gz"\n    tar czf - -C "$file" . | curl --progress-bar --upload-file "-" "${baseUrl}/$basename" | tee /dev/null\n  else\n    curl --progress-bar --upload-file "$file" "${baseUrl}/$basename" | tee /dev/null\n  fi\n}`,
+      code: `transfer() {
+  if [ $# -eq 0 ]; then
+    echo "Usage: transfer <file>" >&2
+    return 1
+  fi
+  file="$1"
+  basename=$(basename "$file")
+  if [ -d "$file" ]; then
+    basename="$basename.tar.gz"
+    tar czf - -C "$file" . | curl --progress-bar --upload-file "-" "${baseUrl}/$basename" | tee /dev/null
+  else
+    curl --progress-bar --upload-file "$file" "${baseUrl}/$basename" | tee /dev/null
+  fi
+}`,
     },
   ]
 

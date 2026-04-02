@@ -34,7 +34,7 @@ export function CodeBlock({code}: CodeBlockProps) {
             className="group relative flex items-center bg-muted border border-border rounded-md cursor-pointer hover:border-primary/30 transition-colors"
             onClick={handleCopy}
         >
-            <code className="flex-1 px-4 py-3 text-sm font-mono text-foreground overflow-x-auto whitespace-nowrap">
+            <code className="flex-1 px-4 py-3 text-sm font-mono text-foreground overflow-x-auto whitespace-pre">
                 {code}
             </code>
             <button
