@@ -4,18 +4,17 @@ import {mdiRobotHappy, mdiContentCopy, mdiCheck, mdiGithub, mdiConsole, mdiChevr
 import {UploadDropzone} from '@/components/UploadDropzone'
 import {CommandComposer} from '@/components/CommandComposer'
 import {ExampleSnippets} from '@/components/ExampleSnippets'
-import {CodeBlock} from '@/components/CodeBlock'
 import {Separator} from '@/components/ui/separator'
 import {useConfig} from '@/hooks/useConfig'
 
-type CliTab = 'install' | 'builder' | 'examples'
+type CliTab = 'builder' | 'examples'
 
 export function HomePage() {
     const baseUrl = window.location.origin
     const config = useConfig()
     const [copied, setCopied] = useState(false)
     const [cliOpen, setCliOpen] = useState(false)
-    const [cliTab, setCliTab] = useState<CliTab>('install')
+    const [cliTab, setCliTab] = useState<CliTab>('builder')
     const skillUrl = `${baseUrl}/SKILL.md`
 
     const copySkillUrl = async () => {
@@ -25,7 +24,6 @@ export function HomePage() {
     }
 
     const tabs: { key: CliTab; label: string }[] = [
-        {key: 'install', label: 'Install'},
         {key: 'builder', label: 'Builder'},
         {key: 'examples', label: 'Examples'},
     ]
@@ -64,7 +62,6 @@ export function HomePage() {
 
                 {cliOpen && (
                     <div className="mt-4">
-                        {/* Tabs */}
                         <div className="flex gap-1 border-b border-border mb-6">
                             {tabs.map((t) => (
                                 <button
@@ -82,20 +79,6 @@ export function HomePage() {
                                 </button>
                             ))}
                         </div>
-
-                        {/* Tab content */}
-                        {cliTab === 'install' && (
-                            <div className="space-y-4">
-                                <CodeBlock code={`curl -fsSL ${baseUrl}/install.sh | bash`}/>
-                                <p className="text-sm text-muted-foreground">
-                                    Installs the <code className="font-mono">transfer</code> command to <code className="font-mono">~/.local/bin</code>.
-                                </p>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-muted-foreground block">Usage</label>
-                                    <CodeBlock code={`transfer hello.txt\ntransfer ./my-directory/\ntransfer hello.txt -e 7d -d 5\ntransfer secret.txt -p mypassword`}/>
-                                </div>
-                            </div>
-                        )}
 
                         {cliTab === 'builder' && (
                             <CommandComposer baseUrl={baseUrl}/>

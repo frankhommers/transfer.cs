@@ -393,6 +393,15 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
         ))}
       </div>
 
+      {/* Install hint for CLI mode */}
+      {mode === 'cli' && (
+        <div className="bg-muted/50 border border-border rounded-md p-3">
+          <p className="text-xs text-muted-foreground">
+            Install: <code className="font-mono bg-muted px-1 py-0.5 rounded">curl -fsSL {baseUrl}/install.sh | bash</code>
+          </p>
+        </div>
+      )}
+
       {/* Output */}
       <div className="space-y-3">
         <label className="text-sm font-medium text-muted-foreground block">Upload</label>
