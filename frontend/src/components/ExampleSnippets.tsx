@@ -22,7 +22,7 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
     },
     {
       title: 'Upload with custom token',
-      code: `curl --upload-file ./hello.txt -H "X-Token: my-slug" ${baseUrl}/hello.txt`,
+      code: `curl --upload-file ./hello.txt -H "Token: my-slug" ${baseUrl}/hello.txt`,
     },
     {
       title: 'Upload using wget',
@@ -50,11 +50,11 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
     },
     {
       title: 'Server-side encrypt upload',
-      code: `curl --upload-file ./secret.txt -H "X-Encrypt-Password: mypass" ${baseUrl}/secret.txt`,
+      code: `curl --upload-file ./secret.txt -H "Encrypt-Password: mypass" ${baseUrl}/secret.txt`,
     },
     {
       title: 'Server-side decrypt download',
-      code: `curl -H "X-Decrypt-Password: mypass" ${baseUrl}/<token>/secret.txt -o ./secret.txt`,
+      code: `curl -H "Decrypt-Password: mypass" ${baseUrl}/<token>/secret.txt -o ./secret.txt`,
     },
     {
       title: 'Upload multiple files',
@@ -70,7 +70,7 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
     },
     {
       title: 'Backup database, encrypt and transfer',
-      code: `mysqldump --all-databases | gzip | gpg -ac -o- | curl -X PUT --upload-file "-" ${baseUrl}/db-backup.sql.gz`,
+      code: `pg_dump -Fc mydb | gpg -ac -o- | curl -X PUT --upload-file "-" ${baseUrl}/db-backup.dump`,
     },
     {
       title: 'ClamAV scan',

@@ -5,8 +5,8 @@ Easy and fast file sharing from the command line. Inspired by [transfer.sh](http
 ## Features
 
 - Upload and download files via curl
-- Custom URL tokens (`-H "X-Token: my-slug"`)
-- Server-side encryption (`-H "X-Encrypt-Password: secret"`)
+- Custom URL tokens (`-H "Token: my-slug"`)
+- Server-side encryption (`-H "Encrypt-Password: secret"`)
 - Client-side GPG encryption (pipe-based)
 - Expiry and download limits
 - Multi-file upload via multipart POST
@@ -38,7 +38,7 @@ docker run -d \
 curl --upload-file ./hello.txt https://transfer.example.com/hello.txt
 
 # Upload with custom token
-curl --upload-file ./hello.txt -H "X-Token: my-slug" https://transfer.example.com/hello.txt
+curl --upload-file ./hello.txt -H "Token: my-slug" https://transfer.example.com/hello.txt
 
 # Upload with expiry and download limit
 curl --upload-file ./hello.txt -H "Expires: 7d" -H "Max-Downloads: 5" https://transfer.example.com/hello.txt
@@ -78,15 +78,15 @@ curl https://transfer.example.com/<token>/files.tar | tar xf -
 
 ```bash
 # Server-side encryption
-curl --upload-file ./secret.txt -H "X-Encrypt-Password: mypass" https://transfer.example.com/secret.txt
-curl -H "X-Decrypt-Password: mypass" https://transfer.example.com/<token>/secret.txt -o ./secret.txt
+curl --upload-file ./secret.txt -H "Encrypt-Password: mypass" https://transfer.example.com/secret.txt
+curl -H "Decrypt-Password: mypass" https://transfer.example.com/<token>/secret.txt -o ./secret.txt
 
 # Client-side GPG encryption
 cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" https://transfer.example.com/secret.txt
 curl https://transfer.example.com/<token>/secret.txt | gpg -o- > ./secret.txt
 
 # Both combined
-cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "X-Encrypt-Password: mypass" https://transfer.example.com/secret.txt
+cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Password: mypass" https://transfer.example.com/secret.txt
 ```
 
 ### Request Headers
@@ -95,8 +95,10 @@ cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "X-Encrypt-Pas
 |--------|-------------|---------|
 | `Expires` | Expiry duration or date | `7d`, `12h30m`, `2026-04-15T00:00:00Z` |
 | `Max-Downloads` | Download limit | `1`, `5`, `100` |
-| `X-Encrypt-Password` | Server-side encryption password | any string |
-| `X-Token` | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
+| `Encrypt-Password` | Server-side encryption password | any string |
+| `Token` | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
+
+> **Note:** `X-Encrypt-Password`, `X-Decrypt-Password`, and `X-Token` are also accepted for backward compatibility.
 
 ### Response Headers
 

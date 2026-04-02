@@ -21,8 +21,8 @@ interface HeaderOption {
 const headerOptions: HeaderOption[] = [
   {key: 'expires', label: 'Expires', icon: mdiClockOutline, header: 'Expires', placeholder: '7d', type: 'text'},
   {key: 'maxDownloads', label: 'Max downloads', icon: mdiDownload, header: 'Max-Downloads', placeholder: '1', type: 'number'},
-  {key: 'serverEncrypt', label: 'Server encrypt', icon: mdiLock, header: 'X-Encrypt-Password', placeholder: 'password', type: 'text'},
-  {key: 'customToken', label: 'Custom token', icon: mdiTagText, header: 'X-Token', placeholder: 'my-slug', type: 'text'},
+  {key: 'serverEncrypt', label: 'Server encrypt', icon: mdiLock, header: 'Encrypt-Password', placeholder: 'password', type: 'text'},
+  {key: 'customToken', label: 'Custom token', icon: mdiTagText, header: 'Token', placeholder: 'my-slug', type: 'text'},
 ]
 
 const modes: { key: Mode; label: string; icon: string }[] = [
@@ -73,7 +73,7 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
   const headerFlags = buildHeaderFlags(headerOptions, active, values)
   const tokenSlug = active['customToken'] && values['customToken'] ? values['customToken'] : '<token>'
   const serverDecryptHeader = active['serverEncrypt']
-    ? ` -H "X-Decrypt-Password: ${values['serverEncrypt'] || 'password'}"`
+    ? ` -H "Decrypt-Password: ${values['serverEncrypt'] || 'password'}"`
     : ''
 
   // --- Command generation per mode ---

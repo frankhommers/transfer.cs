@@ -124,7 +124,7 @@ public static class DownloadEndpoints
       string contentType = metadata.ContentType;
 
       // Decrypt if requested and file is encrypted
-      string decryptPassword = request.Headers["X-Decrypt-Password"].FirstOrDefault() ?? "";
+      string decryptPassword = (request.Headers["Decrypt-Password"].FirstOrDefault() ?? request.Headers["X-Decrypt-Password"].FirstOrDefault()) ?? "";
       if (!string.IsNullOrEmpty(decryptPassword) && metadata.Encrypted)
       {
         stream = await EncryptionService.DecryptAsync(stream, decryptPassword);

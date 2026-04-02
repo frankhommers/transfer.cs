@@ -96,7 +96,7 @@ public static class UploadEndpoints
       }
 
       // Custom or random token
-      string? customToken = request.Headers["X-Token"].FirstOrDefault();
+      string? customToken = (request.Headers["Token"].FirstOrDefault() ?? request.Headers["X-Token"].FirstOrDefault());
       string token;
       if (!string.IsNullOrEmpty(customToken))
       {
@@ -125,7 +125,7 @@ public static class UploadEndpoints
 
       // Encryption
       Stream bodyStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-      string encryptPassword = request.Headers["X-Encrypt-Password"].FirstOrDefault() ?? "";
+      string encryptPassword = (request.Headers["Encrypt-Password"].FirstOrDefault() ?? request.Headers["X-Encrypt-Password"].FirstOrDefault()) ?? "";
       if (!string.IsNullOrEmpty(encryptPassword))
       {
         bodyStream = await EncryptionService.EncryptAsync(bodyStream, encryptPassword);
@@ -181,7 +181,7 @@ public static class UploadEndpoints
         return Results.BadRequest($"File too large. Max size: {options.MaxUploadSizeKb} KB");
 
       // Custom or random token
-      string? customToken = request.Headers["X-Token"].FirstOrDefault();
+      string? customToken = (request.Headers["Token"].FirstOrDefault() ?? request.Headers["X-Token"].FirstOrDefault());
       string token;
       if (!string.IsNullOrEmpty(customToken))
       {

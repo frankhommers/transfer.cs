@@ -17,7 +17,7 @@ curl -H "Max-Downloads: 1" -H "Expires: 5d" --upload-file ./file.txt {{BaseUrl}}
 ## Upload with custom token
 
 ```bash
-curl --upload-file ./file.txt -H "X-Token: my-slug" {{BaseUrl}}/file.txt
+curl --upload-file ./file.txt -H "Token: my-slug" {{BaseUrl}}/file.txt
 ```
 
 The response URL will be `{{BaseUrl}}/my-slug/file.txt`.
@@ -58,8 +58,10 @@ http {{BaseUrl}}/ < ./file.txt
 |--------|-------------|---------|
 | `Expires` | Expiry duration or date | `-H "Expires: 7d"` |
 | `Max-Downloads` | Download limit | `-H "Max-Downloads: 1"` |
-| `X-Encrypt-Password` | Server-side encrypt with password | `-H "X-Encrypt-Password: secret"` |
-| `X-Token` | Custom URL slug (min 4 chars, a-z0-9 and hyphens) | `-H "X-Token: my-slug"` |
+| `Encrypt-Password` | Server-side encrypt with password | `-H "Encrypt-Password: secret"` |
+| `Token` | Custom URL slug (min 4 chars, a-z0-9 and hyphens) | `-H "Token: my-slug"` |
+
+> **Note:** `X-Encrypt-Password`, `X-Decrypt-Password`, and `X-Token` are also accepted for backward compatibility.
 
 ## Download
 
@@ -70,7 +72,7 @@ curl {{BaseUrl}}/<token>/file.txt -o ./file.txt
 To decrypt a server-side encrypted file:
 
 ```bash
-curl -H "X-Decrypt-Password: secret" {{BaseUrl}}/<token>/file.txt -o ./file.txt
+curl -H "Decrypt-Password: secret" {{BaseUrl}}/<token>/file.txt -o ./file.txt
 ```
 
 ## Download archive and extract
@@ -109,7 +111,7 @@ curl {{BaseUrl}}/<token>/secret.txt | openssl aes-256-cbc -pbkdf2 -d > ./secret.
 ## Backup database, encrypt and transfer
 
 ```bash
-mysqldump --all-databases | gzip | gpg -ac -o- | curl -X PUT --upload-file "-" {{BaseUrl}}/db-backup.sql.gz
+pg_dump -Fc mydb | gpg -ac -o- | curl -X PUT --upload-file "-" {{BaseUrl}}/db-backup.dump
 ```
 
 ## Scan for malware
