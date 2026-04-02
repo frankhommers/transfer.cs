@@ -2,7 +2,7 @@ import {useState} from 'react'
 import {Icon} from '@mdi/react'
 import {
   mdiClockOutline, mdiDownload, mdiLock, mdiShieldLock,
-  mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip, mdiProgressHelper, mdiFolder, mdiConsoleLine,
+  mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip, mdiProgressHelper, mdiFolder, mdiConsoleLine, mdiPipe, mdiScript,
 } from '@mdi/js'
 import {CodeBlock} from '@/components/CodeBlock'
 import {Input} from '@/components/ui/input'
@@ -54,6 +54,7 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
   const [dirPath, setDirPath] = useState('./my-directory')
   const [archiveName, setArchiveName] = useState('files')
   const [gzip, setGzip] = useState(true)
+  const [scriptMode, setScriptMode] = useState(false)
 
   // Shared option state
   const [active, setActive] = useState<Record<string, boolean>>({})
@@ -130,16 +131,28 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
     const tarSource = archiveSource === 'directory'
       ? `-C ${dirPath || './my-directory'} .`
       : (globPattern || '*.txt')
+    const tmpFile = `/tmp/${tarFile}`
 
-    if (clientGpg) {
-      uploadCmd = `tar ${tarFlag} - ${tarSource} | gpg -ac -o- | curl -X PUT --upload-file "-" ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
+    if (scriptMode) {
+      const tarLine = `tar ${tarFlag} ${tmpFile} ${tarSource}`
+      const curlLine = clientGpg
+        ? `cat ${tmpFile} | gpg -ac -o- | curl -X PUT --upload-file "-" ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
+        : `curl --upload-file ${tmpFile} ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
+      uploadCmd = `${tarLine}\n${curlLine}\nrm ${tmpFile}`
+      downloadCmd = clientGpg
+        ? `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | gpg -o- | tar ${untarFlag} -`
+        : `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
     } else {
-      uploadCmd = `tar ${tarFlag} - ${tarSource} | curl --upload-file - ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
-    }
-    if (clientGpg) {
-      downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | gpg -o- | tar ${untarFlag} -`
-    } else {
-      downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
+      if (clientGpg) {
+        uploadCmd = `tar ${tarFlag} - ${tarSource} | gpg -ac -o- | curl -X PUT --upload-file "-" ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
+      } else {
+        uploadCmd = `tar ${tarFlag} - ${tarSource} | curl --upload-file - ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
+      }
+      if (clientGpg) {
+        downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | gpg -o- | tar ${untarFlag} -`
+      } else {
+        downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
+      }
     }
   } else {
     // cli mode
@@ -319,6 +332,19 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
             >
               <Icon path={mdiFolderZip} size={0.625}/>
               Gzip compression
+            </button>
+            <button
+              type="button"
+              onClick={() => setScriptMode((prev) => !prev)}
+              className={[
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border',
+                scriptMode
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted text-muted-foreground border-border hover:border-primary/30',
+              ].join(' ')}
+            >
+              <Icon path={scriptMode ? mdiScript : mdiPipe} size={0.625}/>
+              {scriptMode ? 'Script' : 'Pipe'}
             </button>
           </div>
         </div>
