@@ -18,7 +18,11 @@ export function useConfig() {
     useEffect(() => {
         fetch('/api/config')
             .then((res) => res.json())
-            .then((data) => setConfig({...defaultConfig, ...data}))
+            .then((data) => {
+                const merged = {...defaultConfig, ...data}
+                setConfig(merged)
+                document.title = merged.title
+            })
             .catch(() => {
             })
     }, [])

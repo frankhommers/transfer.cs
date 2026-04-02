@@ -2,7 +2,7 @@ import {useState} from 'react'
 import {Icon} from '@mdi/react'
 import {
   mdiClockOutline, mdiDownload, mdiLock, mdiShieldLock,
-  mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip,
+  mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip, mdiProgressHelper,
 } from '@mdi/js'
 import {CodeBlock} from '@/components/CodeBlock'
 import {Input} from '@/components/ui/input'
@@ -56,6 +56,7 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
   const [active, setActive] = useState<Record<string, boolean>>({})
   const [values, setValues] = useState<Record<string, string>>({})
   const [clientGpg, setClientGpg] = useState(false)
+  const [showProgress, setShowProgress] = useState(false)
 
   const toggle = (key: string) => {
     setActive((prev) => ({...prev, [key]: !prev[key]}))
@@ -136,6 +137,12 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
     } else {
       downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
     }
+  }
+
+  // Inject --progress-bar into curl commands
+  if (showProgress) {
+    uploadCmd = uploadCmd.replace(/curl /g, 'curl --progress-bar ')
+    downloadCmd = downloadCmd.replace(/curl /g, 'curl --progress-bar ')
   }
 
   return (
@@ -293,6 +300,19 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
           >
             <Icon path={mdiShieldLock} size={0.625}/>
             Client encrypt (GPG)
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowProgress((prev) => !prev)}
+            className={[
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border',
+              showProgress
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-muted text-muted-foreground border-border hover:border-primary/30',
+            ].join(' ')}
+          >
+            <Icon path={mdiProgressHelper} size={0.625}/>
+            Show progress
           </button>
         </div>
 

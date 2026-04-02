@@ -3,6 +3,7 @@ import {Icon} from '@mdi/react'
 import {mdiRobotHappy, mdiContentCopy, mdiCheck, mdiGithub, mdiConsole, mdiChevronDown} from '@mdi/js'
 import {UploadDropzone} from '@/components/UploadDropzone'
 import {CommandComposer} from '@/components/CommandComposer'
+import {ExampleSnippets} from '@/components/ExampleSnippets'
 import {Separator} from '@/components/ui/separator'
 import {useConfig} from '@/hooks/useConfig'
 
@@ -55,6 +56,10 @@ export function HomePage() {
                         <CommandComposer baseUrl={baseUrl}/>
                     </div>
                 )}
+
+                <Separator className="my-12"/>
+
+                <ExampleSnippets baseUrl={baseUrl}/>
 
                 <Separator className="my-12"/>
 
