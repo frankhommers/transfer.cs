@@ -2,7 +2,7 @@ import {useState} from 'react'
 import {Icon} from '@mdi/react'
 import {
   mdiClockOutline, mdiDownload, mdiLock, mdiShieldLock,
-  mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip, mdiProgressHelper,
+  mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip, mdiProgressHelper, mdiFolder,
 } from '@mdi/js'
 import {CodeBlock} from '@/components/CodeBlock'
 import {Input} from '@/components/ui/input'
@@ -48,7 +48,9 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
   const [files, setFiles] = useState(['hello.txt', 'world.txt'])
 
   // Archive state
+  const [archiveSource, setArchiveSource] = useState<'glob' | 'directory'>('glob')
   const [globPattern, setGlobPattern] = useState('*.txt')
+  const [dirPath, setDirPath] = useState('./my-directory')
   const [archiveName, setArchiveName] = useState('files')
   const [gzip, setGzip] = useState(true)
 
@@ -120,17 +122,19 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
     }
   } else {
     // archive mode
-    const glob = globPattern || '*.txt'
     const name = archiveName || 'files'
     const ext = gzip ? 'tar.gz' : 'tar'
     const tarFlag = gzip ? 'czf' : 'cf'
     const untarFlag = gzip ? 'xzf' : 'xf'
     const tarFile = `${name}.${ext}`
+    const tarSource = archiveSource === 'directory'
+      ? `-C ${dirPath || './my-directory'} .`
+      : (globPattern || '*.txt')
 
     if (clientGpg) {
-      uploadCmd = `tar ${tarFlag} - ${glob} | gpg -ac -o- | curl -X PUT --upload-file "-" ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
+      uploadCmd = `tar ${tarFlag} - ${tarSource} | gpg -ac -o- | curl -X PUT --upload-file "-" ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
     } else {
-      uploadCmd = `tar ${tarFlag} - ${glob} | curl --upload-file - ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
+      uploadCmd = `tar ${tarFlag} - ${tarSource} | curl --upload-file - ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
     }
     if (clientGpg) {
       downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | gpg -o- | tar ${untarFlag} -`
@@ -221,15 +225,55 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
 
       {mode === 'archive' && (
         <div className="space-y-3">
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Glob pattern</label>
-            <Input
-              value={globPattern}
-              onChange={(e) => setGlobPattern(e.target.value)}
-              placeholder="*.txt"
-              className="font-mono"
-            />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setArchiveSource('glob')}
+              className={[
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border',
+                archiveSource === 'glob'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted text-muted-foreground border-border hover:border-primary/30',
+              ].join(' ')}
+            >
+              <Icon path={mdiFile} size={0.625}/>
+              Glob pattern
+            </button>
+            <button
+              type="button"
+              onClick={() => setArchiveSource('directory')}
+              className={[
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border',
+                archiveSource === 'directory'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted text-muted-foreground border-border hover:border-primary/30',
+              ].join(' ')}
+            >
+              <Icon path={mdiFolder} size={0.625}/>
+              Directory
+            </button>
           </div>
+          {archiveSource === 'glob' ? (
+            <div>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Glob pattern</label>
+              <Input
+                value={globPattern}
+                onChange={(e) => setGlobPattern(e.target.value)}
+                placeholder="*.txt"
+                className="font-mono"
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="text-sm font-medium text-muted-foreground mb-2 block">Directory path</label>
+              <Input
+                value={dirPath}
+                onChange={(e) => setDirPath(e.target.value)}
+                placeholder="./my-directory"
+                className="font-mono"
+              />
+            </div>
+          )}
           <div>
             <label className="text-sm font-medium text-muted-foreground mb-2 block">Archive name</label>
             <Input

@@ -6,11 +6,13 @@ namespace TransferCs.Api.Endpoints;
 
 public static class SkillEndpoints
 {
-  private static string? _template;
+  private static string? _skillTemplate;
+  private static string? _transferScript;
 
   public static WebApplication MapSkillEndpoints(this WebApplication app)
   {
     app.MapGet("/SKILL.md", HandleSkillMd);
+    app.MapGet("/install.sh", HandleTransferScript);
     return app;
   }
 
@@ -21,7 +23,7 @@ public static class SkillEndpoints
     TransferCsOptions options = optionsAccessor.Value;
     string baseUrl = UrlHelper.ResolveUrl(request, "", options).TrimEnd('/');
 
-    _template ??= LoadTemplate();
+    _skillTemplate ??= LoadTemplate("SKILL.md");
 
     string maxUploadSize = options.MaxUploadSizeKb > 0
       ? $"{options.MaxUploadSizeKb / 1024} MB"
@@ -31,7 +33,7 @@ public static class SkillEndpoints
       ? $"{options.PurgeDays} days"
       : "disabled";
 
-    string content = _template
+    string content = _skillTemplate
       .Replace("{{Title}}", options.Title)
       .Replace("{{BaseUrl}}", baseUrl)
       .Replace("{{MaxUploadSize}}", maxUploadSize)
@@ -40,9 +42,23 @@ public static class SkillEndpoints
     return Results.Text(content, "text/markdown; charset=utf-8");
   }
 
-  private static string LoadTemplate()
+  private static IResult HandleTransferScript(
+    HttpRequest request,
+    IOptions<TransferCsOptions> optionsAccessor)
   {
-    string templatePath = Path.Combine(AppContext.BaseDirectory, "Templates", "SKILL.md");
+    TransferCsOptions options = optionsAccessor.Value;
+    string baseUrl = UrlHelper.ResolveUrl(request, "", options).TrimEnd('/');
+
+    _transferScript ??= LoadTemplate("transfer");
+
+    string content = _transferScript.Replace("__BASE_URL__", baseUrl);
+
+    return Results.Text(content, "text/plain; charset=utf-8");
+  }
+
+  private static string LoadTemplate(string name)
+  {
+    string templatePath = Path.Combine(AppContext.BaseDirectory, "Templates", name);
     return File.ReadAllText(templatePath);
   }
 }

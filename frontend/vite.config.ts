@@ -58,6 +58,10 @@ export default defineConfig({
                 target: backendUrl,
                 changeOrigin: false,
             },
+            '/install.sh': {
+                target: backendUrl,
+                changeOrigin: false,
+            },
         },
     },
     build: {

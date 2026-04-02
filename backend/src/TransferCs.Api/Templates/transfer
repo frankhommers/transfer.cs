@@ -1,0 +1,63 @@
+#!/bin/bash
+set -euo pipefail
+
+# transfer - easy file sharing from the command line
+# Install: curl -sL https://xfer.hommers.nl/install.sh > ~/.local/bin/transfer && chmod +x ~/.local/bin/transfer
+
+BASE_URL="${TRANSFER_URL:-__BASE_URL__}"
+
+if [ $# -eq 0 ]; then
+  echo "Usage: transfer <file|directory> [options]"
+  echo ""
+  echo "Options:"
+  echo "  -e, --expires <duration>    Set expiry (e.g. 7d, 12h, 30m)"
+  echo "  -d, --downloads <count>     Set max download count"
+  echo "  -t, --token <slug>          Set custom URL token"
+  echo "  -p, --encrypt <password>    Server-side encryption"
+  echo ""
+  echo "Examples:"
+  echo "  transfer hello.txt"
+  echo "  transfer ./my-directory/"
+  echo "  transfer hello.txt -e 7d -d 5"
+  echo "  transfer secret.txt -p mypassword"
+  exit 1
+fi
+
+FILE="$1"
+shift
+
+EXPIRES=""
+MAX_DOWNLOADS=""
+TOKEN=""
+ENCRYPT=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -e|--expires) EXPIRES="$2"; shift 2 ;;
+    -d|--downloads) MAX_DOWNLOADS="$2"; shift 2 ;;
+    -t|--token) TOKEN="$2"; shift 2 ;;
+    -p|--encrypt) ENCRYPT="$2"; shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+if [ ! -e "$FILE" ]; then
+  echo "$FILE: No such file or directory" >&2
+  exit 1
+fi
+
+HEADERS=()
+[ -n "$EXPIRES" ] && HEADERS+=(-H "Expires: $EXPIRES")
+[ -n "$MAX_DOWNLOADS" ] && HEADERS+=(-H "Max-Downloads: $MAX_DOWNLOADS")
+[ -n "$TOKEN" ] && HEADERS+=(-H "Token: $TOKEN")
+[ -n "$ENCRYPT" ] && HEADERS+=(-H "Encrypt-Password: $ENCRYPT")
+
+BASENAME=$(basename "$FILE")
+
+if [ -d "$FILE" ]; then
+  BASENAME="$BASENAME.tar.gz"
+  tar czf - -C "$FILE" . | curl --progress-bar --upload-file "-" "${HEADERS[@]}" "$BASE_URL/$BASENAME" | tee /dev/null
+else
+  curl --progress-bar --upload-file "$FILE" "${HEADERS[@]}" "$BASE_URL/$BASENAME" | tee /dev/null
+fi
+echo

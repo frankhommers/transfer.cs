@@ -85,21 +85,15 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
       code: `curl -X PUT --upload-file ./file.txt ${baseUrl}/file.txt/virustotal`,
     },
     {
-      title: 'Shell function for .bashrc / .zshrc',
-      code: `transfer() {
-  if [ $# -eq 0 ]; then
-    echo "Usage: transfer <file>" >&2
-    return 1
-  fi
-  file="$1"
-  basename=$(basename "$file")
-  if [ -d "$file" ]; then
-    basename="$basename.tar.gz"
-    tar czf - -C "$file" . | curl --progress-bar --upload-file "-" "${baseUrl}/$basename" | tee /dev/null
-  else
-    curl --progress-bar --upload-file "$file" "${baseUrl}/$basename" | tee /dev/null
-  fi
-}`,
+      title: 'Install transfer CLI',
+      code: `curl -sL ${baseUrl}/install.sh > ~/.local/bin/transfer && chmod +x ~/.local/bin/transfer`,
+    },
+    {
+      title: 'Use transfer CLI',
+      code: `transfer hello.txt
+transfer ./my-directory/
+transfer hello.txt -e 7d -d 5
+transfer secret.txt -p mypassword`,
     },
   ]
 
