@@ -69,20 +69,43 @@ public static class UploadEndpoints
     string sanitized = SanitizeHelper.SanitizeFilename(filename);
     string contentType = MimeHelper.GetMimeType(sanitized);
 
-    string tempPath = Path.Combine(options.TempPath, $"upload-{Guid.NewGuid():N}");
-    Directory.CreateDirectory(options.TempPath);
+    // Expected-Checksum is validated before anything is stored, so a mismatch leaves no trace.
+    string? expectedChecksumHeader = request.Headers["Expected-Checksum"].FirstOrDefault()
+                                     ?? request.Headers["X-Expected-Checksum"].FirstOrDefault();
+    string? expectedChecksum = null;
+    if (!string.IsNullOrWhiteSpace(expectedChecksumHeader))
+    {
+      if (!ChecksumHelper.TryParseExpected(expectedChecksumHeader, out string parsed, out string checksumError))
+        return Results.BadRequest(checksumError);
+      expectedChecksum = parsed;
+    }
+
+    string tempDir = options.ResolvedTempPath;
+    string tempPath = Path.Combine(tempDir, $"upload-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tempDir);
     long contentLength;
+    string sha256;
 
     try
     {
       await using (FileStream fs = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
       {
-        await request.Body.CopyToAsync(fs, ct);
-        contentLength = fs.Length;
+        // Hash rides along on the copy that already happens - no second pass over the bytes.
+        (contentLength, sha256) = await ChecksumHelper.CopyAndHashAsync(request.Body, fs, ct);
       }
 
       if (contentLength == 0)
         return Results.BadRequest("Empty upload");
+
+      // A truncated upload (dropped connection, proxy timeout) would otherwise be stored
+      // silently as a valid file.
+      if (request.ContentLength is { } declaredLength && declaredLength != contentLength)
+        return Results.BadRequest(
+          $"Incomplete upload: expected {declaredLength} bytes, received {contentLength}.");
+
+      if (expectedChecksum != null && !ChecksumHelper.Matches(expectedChecksum, sha256))
+        return Results.BadRequest(
+          $"Checksum mismatch: expected sha256:{expectedChecksum}, got sha256:{sha256}.");
 
       if (options.MaxUploadSizeBytes > 0 && contentLength > options.MaxUploadSizeBytes)
         return Results.BadRequest($"File too large. Max size: {options.MaxUploadSizeKb} KB");
@@ -119,7 +142,11 @@ public static class UploadEndpoints
       {
         ContentType = contentType,
         ContentLength = contentLength,
-        DeletionToken = deletionToken
+        DeletionToken = deletionToken,
+        // Hash of the plaintext as received, so it matches what the uploader computes
+        // locally with sha256sum. PGP output is not deterministic, so hashing the stored
+        // ciphertext would give the user nothing to compare against.
+        Sha256 = sha256
       };
 
       ApplyLifetime(metadata, request, options);
@@ -145,7 +172,7 @@ public static class UploadEndpoints
       string deleteUrl = UrlHelper.ResolveUrl(request, $"/{token}/{sanitized}/{deletionToken}", options);
       DateTime? expiry = ResolveExpiry(request, options);
 
-      return new UploadResult(url, deleteUrl, expiry);
+      return new UploadResult(url, deleteUrl, expiry, sha256);
     }
     finally
     {
@@ -168,6 +195,7 @@ public static class UploadEndpoints
 
     IFormCollection form = await request.ReadFormAsync(ct);
     List<string> urls = [];
+    List<string> checksums = [];
 
     foreach (IFormFile file in form.Files)
     {
@@ -209,9 +237,16 @@ public static class UploadEndpoints
 
       ApplyLifetime(metadata, request, options);
 
+      // Hash while streaming into storage; no temp file and no second pass.
+      await using (ChecksumHelper.HashingReadStream stream = new(file.OpenReadStream()))
+      {
+        await storage.PutAsync(token, sanitized, stream, contentType, (ulong)file.Length, ct);
+        metadata.Sha256 = stream.Sha256Hex;
+      }
+
+      // Metadata is written after the blob so it carries the digest.
       await metadataService.SaveAsync(token, sanitized, metadata, ct);
-      await using Stream stream = file.OpenReadStream();
-      await storage.PutAsync(token, sanitized, stream, contentType, (ulong)file.Length, ct);
+      checksums.Add(metadata.Sha256);
 
       string url = UrlHelper.ResolveUrl(request, $"/{token}/{sanitized}", options);
       urls.Add(url);
@@ -219,6 +254,14 @@ public static class UploadEndpoints
 
     if (urls.Count == 0)
       return Results.BadRequest("No files uploaded");
+
+    // One header value per file would be ambiguous, so only emit it for a single-file post.
+    if (checksums.Count == 1 && !string.IsNullOrEmpty(checksums[0]))
+    {
+      string value = ChecksumHelper.Format(checksums[0]);
+      request.HttpContext.Response.Headers["Checksum"] = value;
+      request.HttpContext.Response.Headers["X-Checksum"] = value;
+    }
 
     return Results.Text(string.Join("\n", urls) + "\n", "text/plain");
   }
@@ -231,12 +274,14 @@ public static class UploadEndpoints
     private readonly string _url;
     private readonly string _deleteUrl;
     private readonly DateTime? _expires;
+    private readonly string _sha256;
 
-    public UploadResult(string url, string deleteUrl, DateTime? expires)
+    public UploadResult(string url, string deleteUrl, DateTime? expires, string sha256)
     {
       _url = url;
       _deleteUrl = deleteUrl;
       _expires = expires;
+      _sha256 = sha256;
     }
 
     public async Task ExecuteAsync(HttpContext httpContext)
@@ -246,6 +291,15 @@ public static class UploadEndpoints
       httpContext.Response.Headers["X-Url-Delete"] = _deleteUrl;
       if (_expires != null)
         httpContext.Response.Headers.Expires = ExpiresHelper.FormatHttpDate(_expires.Value);
+
+      // Header, not body: the body is exactly the URL and CLI workflows pipe it straight on.
+      if (!string.IsNullOrEmpty(_sha256))
+      {
+        string value = ChecksumHelper.Format(_sha256);
+        httpContext.Response.Headers["Checksum"] = value;
+        httpContext.Response.Headers["X-Checksum"] = value;
+      }
+
       await httpContext.Response.WriteAsync(_url + "\n");
     }
   }

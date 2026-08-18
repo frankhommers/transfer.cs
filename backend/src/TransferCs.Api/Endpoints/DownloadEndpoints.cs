@@ -125,8 +125,10 @@ public static class DownloadEndpoints
 
       // Decrypt if requested and file is encrypted
       string decryptPassword = (request.Headers["Decrypt-Password"].FirstOrDefault() ?? request.Headers["X-Decrypt-Password"].FirstOrDefault()) ?? "";
+      bool decrypted = false;
       if (!string.IsNullOrEmpty(decryptPassword) && metadata.Encrypted)
       {
+        decrypted = true;
         stream = await EncryptionService.DecryptAsync(stream, decryptPassword);
         contentLength = (ulong)stream.Length;
         if (!string.IsNullOrEmpty(metadata.DecryptedContentType))
@@ -140,6 +142,16 @@ public static class DownloadEndpoints
       response.Headers.ContentDisposition = disposition;
       response.Headers["X-Remaining-Downloads"] = metadata.RemainingDownloads;
       response.Headers["X-Remaining-Days"] = metadata.RemainingDays;
+
+      // The stored digest is over the plaintext. For an encrypted file that hash would let a
+      // holder of the link confirm the contents without the password, so only expose it when
+      // the body being served is that plaintext. Empty for uploads from before this field.
+      if (!string.IsNullOrEmpty(metadata.Sha256) && (!metadata.Encrypted || decrypted))
+      {
+        string checksum = ChecksumHelper.Format(metadata.Sha256);
+        response.Headers["Checksum"] = checksum;
+        response.Headers["X-Checksum"] = checksum;
+      }
 
       if (range != null && range.ContentRange != null)
       {

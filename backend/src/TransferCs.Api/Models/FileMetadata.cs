@@ -18,6 +18,13 @@ public class FileMetadata
 
   [JsonPropertyName("Encrypted")] public bool Encrypted { get; set; }
 
+  /// <summary>
+  /// SHA-256 of the file as it was received, in lowercase hex. For server-side encrypted
+  /// uploads this is the digest of the plaintext, so it matches what the uploader computes
+  /// locally. Empty for uploads made before this field existed.
+  /// </summary>
+  [JsonPropertyName("Sha256")] public string Sha256 { get; set; } = "";
+
   [JsonPropertyName("DecryptedContentType")]
   public string DecryptedContentType { get; set; } = "";
 

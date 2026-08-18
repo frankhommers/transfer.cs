@@ -1,6 +1,6 @@
 import {useState, useCallback} from 'react'
 import {useDropzone} from 'react-dropzone'
-import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2} from 'lucide-react'
+import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck} from 'lucide-react'
 import {Progress} from '@/components/ui/progress'
 
 interface UploadResult {
@@ -8,6 +8,7 @@ interface UploadResult {
   url: string
   deleteUrl: string
   expires: string | null
+  checksum: string
   failed: boolean
 }
 
@@ -39,6 +40,12 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
 }
 
+// Paste-ready verification command. Two spaces between digest and filename is what
+// shasum/sha256sum -c expects for binary mode.
+function verifyCommand(result: {checksum: string; filename: string}): string {
+  return `echo "${result.checksum}  ${result.filename}" | shasum -a 256 -c`
+}
+
 async function copyToClipboard(text: string) {
   try {
     await navigator.clipboard.writeText(text)
@@ -57,7 +64,7 @@ async function copyToClipboard(text: string) {
 function uploadFile(
   file: File,
   onProgress: (loaded: number, total: number) => void
-): Promise<{ url: string; deleteUrl: string; expires: string | null }> {
+): Promise<{ url: string; deleteUrl: string; expires: string | null; checksum: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', `/${encodeURIComponent(file.name)}`)
@@ -74,6 +81,8 @@ function uploadFile(
           url: xhr.responseText.trim(),
           deleteUrl: xhr.getResponseHeader('X-Url-Delete') || '',
           expires: xhr.getResponseHeader('Expires'),
+          // "sha256:<hex>" - keep only the digest, that is what shasum compares
+          checksum: (xhr.getResponseHeader('Checksum') || '').replace(/^sha256:/i, ''),
         })
       } else {
         reject(new Error(xhr.statusText))
@@ -92,6 +101,7 @@ export function UploadDropzone() {
   const [fileProgress, setFileProgress] = useState<FileProgress[]>([])
   const [results, setResults] = useState<UploadResult[]>([])
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [copiedChecksumIndex, setCopiedChecksumIndex] = useState<number | null>(null)
 
   const onDrop = useCallback(async (files: File[]) => {
     setUploading(true)
@@ -116,7 +126,9 @@ export function UploadDropzone() {
         setFileProgress((prev) =>
           prev.map((p, idx) => idx === i ? {...p, done: true} : p)
         )
-        newResults.push({filename: file.name, url: '', deleteUrl: '', expires: null, failed: true})
+        newResults.push({
+          filename: file.name, url: '', deleteUrl: '', expires: null, checksum: '', failed: true,
+        })
       }
     }
 
@@ -130,6 +142,12 @@ export function UploadDropzone() {
     await copyToClipboard(url)
     setCopiedIndex(index)
     setTimeout(() => setCopiedIndex(null), 2000)
+  }
+
+  const handleCopyChecksum = async (result: UploadResult, index: number) => {
+    await copyToClipboard(verifyCommand(result))
+    setCopiedChecksumIndex(index)
+    setTimeout(() => setCopiedChecksumIndex(null), 2000)
   }
 
   const handleDelete = async (result: UploadResult, index: number) => {
@@ -222,6 +240,14 @@ export function UploadDropzone() {
                         {formatExpiry(result.expires)}
                       </p>
                     )}
+                    {result.checksum && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 min-w-0">
+                        <Hash className="h-3 w-3 shrink-0"/>
+                        <span className="font-mono truncate" title={`sha256:${result.checksum}`}>
+                          {result.checksum}
+                        </span>
+                      </p>
+                    )}
                   </>
                 )}
               </div>
@@ -239,6 +265,21 @@ export function UploadDropzone() {
                       <Copy className="h-4 w-4"/>
                     )}
                   </button>
+                  {result.checksum && (
+                    <button
+                      type="button"
+                      className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                      onClick={() => handleCopyChecksum(result, index)}
+                      aria-label="Copy checksum verify command"
+                      title="Copy verify command"
+                    >
+                      {copiedChecksumIndex === index ? (
+                        <Check className="h-4 w-4 text-green-500"/>
+                      ) : (
+                        <ShieldCheck className="h-4 w-4"/>
+                      )}
+                    </button>
+                  )}
                   {result.deleteUrl && (
                     <button
                       type="button"

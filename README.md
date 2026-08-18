@@ -97,8 +97,9 @@ cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Passw
 | `Max-Downloads` | Download limit | `1`, `5`, `100` |
 | `Encrypt-Password` | Server-side encryption password | any string |
 | `Token` | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
+| `Expected-Checksum` | Reject the upload unless it hashes to this SHA-256 | `sha256:9f86d081...` |
 
-> **Note:** `X-Encrypt-Password`, `X-Decrypt-Password`, and `X-Token` are also accepted for backward compatibility.
+> **Note:** `X-Encrypt-Password`, `X-Decrypt-Password`, `X-Token`, and `X-Expected-Checksum` are also accepted for backward compatibility.
 
 ### Response Headers
 
@@ -106,8 +107,34 @@ cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Passw
 |--------|---------|
 | `X-Url-Delete` | URL to delete the uploaded file |
 | `Expires` | Expiry date of the upload |
+| `Checksum` | `sha256:<hex>` of the file as received (also sent as `X-Checksum`) |
 | `X-Remaining-Downloads` | Remaining download count |
 | `X-Remaining-Days` | Remaining days until expiry |
+
+### Checksums
+
+Every upload response carries a `Checksum` header with the SHA-256 of the bytes the
+server received. For server-side encrypted uploads this is the digest of the
+*plaintext*, so it matches what you compute locally — the stored ciphertext is not
+byte-reproducible.
+
+```bash
+# Show the checksum of an upload
+curl -sD- --upload-file ./hello.txt https://transfer.example.com/hello.txt | grep -i '^checksum:'
+
+# Have the server reject a corrupted or truncated upload instead of storing it
+curl --upload-file ./hello.txt \
+  -H "Expected-Checksum: sha256:$(shasum -a 256 ./hello.txt | cut -d' ' -f1)" \
+  https://transfer.example.com/hello.txt
+```
+
+A mismatch returns `400` and nothing is stored. `Expected-Checksum` accepts a bare
+64-character hex digest too, so you can paste `sha256sum` output directly. It is
+supported on `PUT` uploads; multipart `POST` only reports checksums.
+
+The download response carries the same `Checksum` header, except for encrypted files —
+there the plaintext digest is only sent when you supply `Decrypt-Password`, so a link
+alone can never be used to confirm the contents.
 
 ### AI Agent Integration
 

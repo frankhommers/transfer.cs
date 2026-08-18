@@ -60,8 +60,27 @@ http {{BaseUrl}}/ < ./file.txt
 | `Max-Downloads` | Download limit | `-H "Max-Downloads: 1"` |
 | `Encrypt-Password` | Server-side encrypt with password | `-H "Encrypt-Password: secret"` |
 | `Token` | Custom URL slug (min 4 chars, a-z0-9 and hyphens) | `-H "Token: my-slug"` |
+| `Expected-Checksum` | Reject the upload unless it hashes to this SHA-256 | `-H "Expected-Checksum: sha256:9f86d081..."` |
 
-> **Note:** `X-Encrypt-Password`, `X-Decrypt-Password`, and `X-Token` are also accepted for backward compatibility.
+> **Note:** `X-Encrypt-Password`, `X-Decrypt-Password`, `X-Token`, and `X-Expected-Checksum` are also accepted for backward compatibility.
+
+## Verify an upload
+
+Every upload response carries a `Checksum` header. To have the server reject a
+corrupted or truncated upload instead of storing it, send the digest up front:
+
+```bash
+curl --upload-file ./file.txt \
+  -H "Expected-Checksum: sha256:$(shasum -a 256 ./file.txt | cut -d' ' -f1)" \
+  {{BaseUrl}}/file.txt
+```
+
+A mismatch returns 400 and nothing is stored. To check a download afterwards:
+
+```bash
+curl -sD- -o ./file.txt {{BaseUrl}}/<token>/file.txt | grep -i '^checksum:'
+shasum -a 256 ./file.txt
+```
 
 ## Download
 
@@ -173,6 +192,7 @@ curl -X DELETE {{BaseUrl}}/<token>/file.txt/<deletion-token>
 |--------|-------------|
 | `X-Url-Delete` | URL to delete the uploaded file |
 | `Expires` | Expiry date of the upload |
+| `Checksum` | `sha256:<hex>` of the file as received (also sent as `X-Checksum`) |
 | `X-Remaining-Downloads` | Remaining download count |
 | `X-Remaining-Days` | Remaining days until expiry |
 
