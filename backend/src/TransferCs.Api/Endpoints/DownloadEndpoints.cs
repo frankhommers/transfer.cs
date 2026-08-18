@@ -17,6 +17,7 @@ public static class DownloadEndpoints
       ["HEAD"],
       async (string action, string token, string filename,
         HttpRequest request,
+        HttpResponse response,
         IStorageProvider storage,
         MetadataService metadataService,
         IOptions<TransferCsOptions> optionsAccessor,
@@ -24,7 +25,7 @@ public static class DownloadEndpoints
       {
         if (!IsValidAction(action))
           return Results.NotFound();
-        return await HandleHeadAsync(token, filename, request, storage, metadataService, optionsAccessor, ct);
+        return await HandleHeadAsync(token, filename, request, response, storage, metadataService, optionsAccessor, ct);
       });
 
     app.MapMethods("/{action}/{token}/{filename}",
@@ -47,11 +48,12 @@ public static class DownloadEndpoints
       ["HEAD"],
       (string token, string filename,
           HttpRequest request,
+          HttpResponse response,
           IStorageProvider storage,
           MetadataService metadataService,
           IOptions<TransferCsOptions> optionsAccessor,
           CancellationToken ct) =>
-        HandleHeadAsync(token, filename, request, storage, metadataService, optionsAccessor, ct));
+        HandleHeadAsync(token, filename, request, response, storage, metadataService, optionsAccessor, ct));
 
     app.MapGet("/{token}/{filename}",
       (string token, string filename,
@@ -71,10 +73,16 @@ public static class DownloadEndpoints
     return action is "download" or "get" or "inline";
   }
 
+  /// <summary>
+  /// HEAD returns the metadata headers only. It deliberately does not count as a download:
+  /// the remaining-download counter is left untouched, so a one-shot link survives a HEAD.
+  /// That makes it the cheap way to read the checksum without pulling the payload.
+  /// </summary>
   private static async Task<IResult> HandleHeadAsync(
     string token,
     string filename,
     HttpRequest request,
+    HttpResponse response,
     IStorageProvider storage,
     MetadataService metadataService,
     IOptions<TransferCsOptions> optionsAccessor,
@@ -88,10 +96,26 @@ public static class DownloadEndpoints
     {
       ulong contentLength = await storage.HeadAsync(token, filename, ct);
 
-      return Results.Ok(new
+      response.ContentType = metadata.ContentType;
+      response.ContentLength = (long)contentLength;
+      response.Headers.ContentDisposition = $"attachment; filename=\"{filename}\"";
+      response.Headers["X-Remaining-Downloads"] = metadata.RemainingDownloads;
+      response.Headers["X-Remaining-Days"] = metadata.RemainingDays;
+
+      if (metadata.MaxDate != DateTime.MinValue)
+        response.Headers.Expires = ExpiresHelper.FormatHttpDate(metadata.MaxDate);
+
+      // The digest is over the plaintext. HEAD cannot decrypt, so for an encrypted upload
+      // publishing it here would let anyone holding the link confirm the contents without
+      // the password. Empty for uploads from before this field existed.
+      if (!string.IsNullOrEmpty(metadata.Sha256) && !metadata.Encrypted)
       {
-        // Headers will be set below
-      });
+        string checksum = ChecksumHelper.Format(metadata.Sha256);
+        response.Headers["Checksum"] = checksum;
+        response.Headers["X-Checksum"] = checksum;
+      }
+
+      return Results.Empty;
     }
     catch (Exception ex) when (storage.IsNotExist(ex))
     {
