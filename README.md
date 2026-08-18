@@ -136,6 +136,21 @@ The download response carries the same `Checksum` header, except for encrypted f
 there the plaintext digest is only sent when you supply `Decrypt-Password`, so a link
 alone can never be used to confirm the contents.
 
+To read the checksum, size and expiry *without* downloading, use `HEAD`. It does not
+count as a download, so a `Max-Downloads: 1` link stays intact:
+
+```bash
+curl -sI https://transfer.example.com/<token>/hello.txt
+```
+
+For encrypted uploads the `Checksum` header is omitted on `HEAD`, since it cannot decrypt.
+
+The installable CLI has a `--verify` flag that does the hashing for you:
+
+```bash
+transfer ./big.iso --verify
+```
+
 ### AI Agent Integration
 
 Every instance serves a dynamic `/SKILL.md` with instance-specific usage instructions,

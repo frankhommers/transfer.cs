@@ -82,6 +82,18 @@ curl -sD- -o ./file.txt {{BaseUrl}}/<token>/file.txt | grep -i '^checksum:'
 shasum -a 256 ./file.txt
 ```
 
+## Inspect without downloading
+
+`HEAD` returns size, expiry and checksum without transferring the body, and
+**without counting as a download** - a `Max-Downloads: 1` link survives it:
+
+```bash
+curl -sI {{BaseUrl}}/<token>/file.txt
+```
+
+For a server-side encrypted upload the `Checksum` header is omitted here, because
+the digest is over the plaintext and `HEAD` cannot decrypt.
+
 ## Download
 
 ```bash

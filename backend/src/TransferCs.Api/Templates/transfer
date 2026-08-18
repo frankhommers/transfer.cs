@@ -14,12 +14,14 @@ if [ $# -eq 0 ]; then
   echo "  -d, --downloads <count>     Set max download count"
   echo "  -t, --token <slug>          Set custom URL token"
   echo "  -p, --encrypt <password>    Server-side encryption"
+  echo "  -v, --verify                Send SHA-256 up front; server rejects a corrupted upload"
   echo ""
   echo "Examples:"
   echo "  transfer hello.txt"
   echo "  transfer ./my-directory/"
   echo "  transfer hello.txt -e 7d -d 5"
   echo "  transfer secret.txt -p mypassword"
+  echo "  transfer big.iso --verify"
   exit 1
 fi
 
@@ -30,6 +32,7 @@ EXPIRES=""
 MAX_DOWNLOADS=""
 TOKEN=""
 ENCRYPT=""
+VERIFY=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -37,6 +40,7 @@ while [ $# -gt 0 ]; do
     -d|--downloads) MAX_DOWNLOADS="$2"; shift 2 ;;
     -t|--token) TOKEN="$2"; shift 2 ;;
     -p|--encrypt) ENCRYPT="$2"; shift 2 ;;
+    -v|--verify) VERIFY=1; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -46,18 +50,81 @@ if [ ! -e "$FILE" ]; then
   exit 1
 fi
 
+TMP_FILES=()
+cleanup() {
+  [ ${#TMP_FILES[@]} -eq 0 ] || rm -f "${TMP_FILES[@]}"
+}
+trap cleanup EXIT
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  else
+    echo "--verify needs sha256sum or shasum, neither was found" >&2
+    exit 1
+  fi
+}
+
+BASENAME=$(basename "$FILE")
+SOURCE="$FILE"
+
+if [ -d "$FILE" ]; then
+  BASENAME="$BASENAME.tar.gz"
+  if [ -n "$VERIFY" ]; then
+    # A streamed tar cannot be hashed before it is sent, so stage it to disk first.
+    TAR_TMP=$(mktemp "${TMPDIR:-/tmp}/transfer-XXXXXX")
+    TMP_FILES+=("$TAR_TMP")
+    tar czf "$TAR_TMP" -C "$FILE" .
+    SOURCE="$TAR_TMP"
+  else
+    SOURCE="-"
+  fi
+fi
+
 HEADERS=()
 [ -n "$EXPIRES" ] && HEADERS+=(-H "Expires: $EXPIRES")
 [ -n "$MAX_DOWNLOADS" ] && HEADERS+=(-H "Max-Downloads: $MAX_DOWNLOADS")
 [ -n "$TOKEN" ] && HEADERS+=(-H "Token: $TOKEN")
 [ -n "$ENCRYPT" ] && HEADERS+=(-H "Encrypt-Password: $ENCRYPT")
 
-BASENAME=$(basename "$FILE")
-
-if [ -d "$FILE" ]; then
-  BASENAME="$BASENAME.tar.gz"
-  tar czf - -C "$FILE" . | curl --progress-bar --upload-file "-" "${HEADERS[@]}" "$BASE_URL/$BASENAME" | tee /dev/null
-else
-  curl --progress-bar --upload-file "$FILE" "${HEADERS[@]}" "$BASE_URL/$BASENAME" | tee /dev/null
+# bash 3.2 (still the default /bin/bash on macOS) treats "${ARR[@]}" on an empty
+# array as an unbound variable under `set -u`, hence the guarded expansions below.
+if [ -z "$VERIFY" ]; then
+  if [ "$SOURCE" = "-" ]; then
+    tar czf - -C "$FILE" . | curl --progress-bar --upload-file "-" ${HEADERS[@]+"${HEADERS[@]}"} "$BASE_URL/$BASENAME" | tee /dev/null
+  else
+    curl --progress-bar --upload-file "$SOURCE" ${HEADERS[@]+"${HEADERS[@]}"} "$BASE_URL/$BASENAME" | tee /dev/null
+  fi
+  echo
+  exit 0
 fi
-echo
+
+# --verify: hash locally, let the server reject a mismatch, then double-check
+# the digest it reports back.
+EXPECTED=$(sha256_of "$SOURCE")
+HEADERS+=(-H "Expected-Checksum: sha256:$EXPECTED")
+
+HDR_TMP=$(mktemp "${TMPDIR:-/tmp}/transfer-hdr-XXXXXX")
+TMP_FILES+=("$HDR_TMP")
+
+BODY=$(curl --progress-bar -D "$HDR_TMP" --upload-file "$SOURCE" ${HEADERS[@]+"${HEADERS[@]}"} "$BASE_URL/$BASENAME")
+
+# Skip any 100 Continue block curl may have received first.
+STATUS=$(grep -E '^HTTP/' "$HDR_TMP" | tail -1 | awk '{print $2}')
+if [ "${STATUS:-000}" -lt 200 ] || [ "${STATUS:-000}" -ge 300 ]; then
+  echo "Upload failed (HTTP $STATUS): $BODY" >&2
+  exit 1
+fi
+
+RETURNED=$(grep -i '^checksum:' "$HDR_TMP" | tail -1 \
+  | sed -E 's/^[Cc]hecksum:[[:space:]]*//; s/^sha256://I; s/[[:space:]]*$//')
+
+if [ -n "$RETURNED" ] && [ "$RETURNED" != "$EXPECTED" ]; then
+  echo "Checksum mismatch: sent $EXPECTED, server stored $RETURNED" >&2
+  exit 1
+fi
+
+echo "$BODY"
+echo "sha256: $EXPECTED (verified)" >&2
