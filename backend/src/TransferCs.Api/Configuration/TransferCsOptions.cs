@@ -30,4 +30,12 @@ public class TransferCsOptions
   public string ProxyPort { get; set; } = "";
 
   public long MaxUploadSizeBytes => MaxUploadSizeKb * 1024;
+
+  /// <summary>
+  /// Temp directory to stage uploads in. Configuration binding happily overwrites the
+  /// default with an empty string (appsettings.json used to ship "TempPath": ""), which
+  /// then blew up in Directory.CreateDirectory. Always go through this property.
+  /// </summary>
+  public string ResolvedTempPath =>
+    string.IsNullOrWhiteSpace(TempPath) ? Path.GetTempPath() : TempPath;
 }

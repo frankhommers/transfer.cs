@@ -23,7 +23,9 @@ public static class ScanEndpoints
     if (string.IsNullOrEmpty(options.ClamAvHost))
       return Results.BadRequest("ClamAV not configured");
 
-    string tempPath = Path.Combine(options.TempPath, $"scan-{Guid.NewGuid():N}");
+    string tempDir = options.ResolvedTempPath;
+    string tempPath = Path.Combine(tempDir, $"scan-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tempDir);
     try
     {
       await using (FileStream fs = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -58,7 +60,9 @@ public static class ScanEndpoints
     HttpClient httpClient = httpClientFactory.CreateClient();
     VirusTotalService vtService = new(httpClient, options.VirusTotalKey);
 
-    string tempPath = Path.Combine(options.TempPath, $"vt-{Guid.NewGuid():N}");
+    string tempDir = options.ResolvedTempPath;
+    string tempPath = Path.Combine(tempDir, $"vt-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tempDir);
     try
     {
       await using (FileStream fs = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
