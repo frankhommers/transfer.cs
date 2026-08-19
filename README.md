@@ -310,6 +310,17 @@ at a reverse proxy.
 }
 ```
 
+The same site can be configured with nested environment variables in Compose. Each host
+uses a numeric array index; setting `TransferCs__Sites` by itself does not create a site:
+
+```yaml
+environment:
+  TransferCs__InitialSiteId: public
+  TransferCs__Sites__public__Hosts__0: transfer.example.com
+  TransferCs__Sites__public__DataDirectory: public
+  TransferCs__Sites__public__BaseUrl: https://transfer.example.com
+```
+
 Each site requires at least one `Hosts` entry. `DataDirectory` is site-specific and
 defaults to the site ID. `Title`, `BaseUrl`, `PurgeDays`, `MaxUploadSizeKb`, and
 `RandomTokenLength` may override global defaults. Other settings, including
@@ -334,6 +345,8 @@ the migration. Use this ordered runbook before the first multi-site startup:
 1. Update the Compose file and environment to the new image tag and multi-site
    configuration. Define `Sites`, `InitialSiteId`, and each site's `DataDirectory`, keep
    the existing volume mounted at `/data`, and do not start the normal application yet.
+   Use nested environment keys as shown above or mount the JSON at
+   `/app/appsettings.Production.json` for both `compose run` and the normal service.
 2. Pull the configured service image without starting it:
 
    ```bash
@@ -353,6 +366,7 @@ the migration. Use this ordered runbook before the first multi-site startup:
    ```bash
    (
      set -eu
+     umask 077
      mkdir -p ./backups
      BACKUP_FILE="transfer-data-pre-multisite-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
      PARTIAL="./backups/$BACKUP_FILE.partial"
@@ -458,7 +472,10 @@ hidden entries, without removing the mount point itself. If restore fails, leave
 service stopped and repeat the guarded restore after resolving the error. After a
 successful restore, inspect `/data` again with the command in step 5 and reclassify its
 root directories before retrying migration. Do not start the application until migration
-and verification succeed.
+and verification succeed. Restoring an archive can assign new filesystem creation times
+on filesystems with native birth-time support, which restarts the physical `PurgeDays`
+age. Reconcile retention after restore by checking metadata expiry and original archive
+timestamps before returning the service to normal operation.
 
 Historical exception: `.multisite-migration-v1` is an obsolete marker written only by
 the short-lived automatic-migration version. If that version already migrated the volume,
@@ -467,8 +484,9 @@ code neither reads nor writes the marker; remove it only after verification if d
 
 ## Deploy with Traefik
 
-Traefik is a common reverse proxy for Docker deployments. Downloads are streamed, while
-PUT uploads are staged in transfer.cs temporary storage. Reverse-proxy buffering adds a
+Traefik is a common reverse proxy for Docker deployments. Ordinary file downloads are
+streamed; PUT uploads, decrypted downloads, and generated bundles use transfer.cs
+temporary storage. Size `TempPath` for those operations. Reverse-proxy buffering adds a
 second full-body buffer and should remain disabled for large transfers.
 
 ### docker-compose.yml
@@ -606,7 +624,7 @@ Open the project in JetBrains Rider and use the **Full Stack** run configuration
 cd backend/src/TransferCs.Api && dotnet watch run
 
 # Frontend (with HMR)
-cd frontend && bun run dev
+cd frontend && bun install --frozen-lockfile && bun run dev
 ```
 
 The frontend dev server runs on `:3002` and proxies API requests to the backend on `:5002`.
