@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN bun run build
 
 # Stage 2: Build backend (self-contained, trimmed)
-FROM mcr.microsoft.com/dotnet/sdk:10.0-preview-alpine AS backend-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS backend-build
 ARG TARGETARCH
 WORKDIR /app
 COPY backend/src/TransferCs.Api/TransferCs.Api.csproj backend/src/TransferCs.Api/
