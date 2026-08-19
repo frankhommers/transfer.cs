@@ -89,15 +89,16 @@ curl https://transfer.example.com/<token>/files.tar | tar xf -
 ### Standalone scanning
 
 ```bash
-# Scan with ClamAV without storing the file
+# Scan with ClamAV without creating a transfer
 curl --upload-file ./hello.txt https://transfer.example.com/hello.txt/scan
 
-# Submit to VirusTotal without storing the file
+# Submit to VirusTotal without creating a transfer
 curl --upload-file ./hello.txt https://transfer.example.com/hello.txt/virustotal
 ```
 
 `PUT /{filename}/scan` uses ClamAV and `PUT /{filename}/virustotal` uses VirusTotal.
-Each endpoint scans the request body without creating a stored upload.
+Neither creates a persistent transfer or download URL. Request data is staged temporarily;
+the VirusTotal endpoint also sends it to VirusTotal, a third-party service.
 
 ### Encryption
 
@@ -160,11 +161,10 @@ curl --upload-file ./hello.txt \
 ```
 
 A mismatch returns `400` and nothing is stored. `Expected-Checksum` accepts a bare
-64-character hexadecimal digest or the canonical `sha256:<digest>`. Algorithm names are
-case-insensitive; `sha-256` and `=` separators are also accepted. Do not include the
-filename from a full `sha256sum` output line. It is supported only on PUT uploads.
-Single-file multipart POST reports a checksum; multi-file multipart POST does not expose
-per-file checksum headers.
+64-character hexadecimal digest, or that digest prefixed by case-insensitive `sha256` or
+`sha-256` and a `:` or `=` separator. Do not include the filename from a full `sha256sum`
+output line. It is supported only on PUT uploads. Single-file multipart POST reports a
+checksum; multi-file multipart POST does not expose per-file checksum headers.
 
 The download response carries the same `Checksum` header, except for encrypted files —
 there the plaintext digest is only sent when you supply `Decrypt-Password`, so a link
