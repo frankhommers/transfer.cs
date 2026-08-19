@@ -79,7 +79,11 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 WebApplication app = builder.Build();
-app.Services.GetRequiredService<SiteDataMigration>().Run();
+if (MigrationCommand.IsRequested(args))
+{
+  MigrationCommand.Execute(app.Services, Console.Out);
+  return;
+}
 
 // Middleware pipeline (order matters)
 app.UseForwardedHeaders();

@@ -16,10 +16,12 @@ public class SiteDataMigrationTests : IDisposable
     File.WriteAllText(Path.Combine(legacyDirectory, "file.txt"), "legacy");
     SiteDataMigration migration = CreateMigration();
 
-    migration.Run();
+    int migratedDirectories = migration.Run();
 
+    Assert.Equal(1, migratedDirectories);
     Assert.False(Directory.Exists(legacyDirectory));
     Assert.Equal("legacy", File.ReadAllText(Path.Combine(_basePath, "alpha", "legacy-token", "file.txt")));
+    Assert.False(File.Exists(Path.Combine(_basePath, ".multisite-migration-v1")));
   }
 
   [Fact]
@@ -61,17 +63,75 @@ public class SiteDataMigrationTests : IDisposable
   }
 
   [Fact]
-  public void Run_DoesNotRemigrateDirectoriesAfterCompletion()
+  public void Run_RefusesSymlinkInsideLegacySource()
   {
-    CreateMigration().Run();
-    string retiredSiteDirectory = Path.Combine(_basePath, "beta");
-    Directory.CreateDirectory(retiredSiteDirectory);
-    File.WriteAllText(Path.Combine(retiredSiteDirectory, "file.txt"), "site data");
+    string outsidePath = Path.Combine(Path.GetTempPath(), $"transfer-legacy-outside-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(outsidePath);
+    string legacyDirectory = Path.Combine(_basePath, "legacy-token");
+    Directory.CreateDirectory(legacyDirectory);
+    Directory.CreateSymbolicLink(Path.Combine(legacyDirectory, "linked"), outsidePath);
 
+    try
+    {
+      Assert.Throws<InvalidOperationException>(() => CreateMigration().Run());
+    }
+    finally
+    {
+      Directory.Delete(outsidePath);
+    }
+  }
+
+  [Fact]
+  public void Run_RefusesConfiguredDirectoryWithDifferentCasing()
+  {
+    Directory.CreateDirectory(Path.Combine(_basePath, "alpha"));
+    TransferCsOptions options = new()
+    {
+      BasePath = _basePath,
+      InitialSiteId = "primary",
+      Sites = new Dictionary<string, SiteOptions>
+      {
+        ["primary"] = new() { Hosts = ["alpha.test"], DataDirectory = "ALPHA" }
+      }
+    };
+    SiteResolver resolver = new(Options.Create(options));
+    SiteDataMigration migration = new(Options.Create(options), resolver);
+
+    Assert.Throws<InvalidOperationException>(() => migration.Run());
+  }
+
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public void Run_RefusesConfiguredPathOccupiedByNonDirectory(bool symbolicLink)
+  {
+    Directory.CreateDirectory(_basePath);
+    string configuredPath = Path.Combine(_basePath, "alpha");
+    if (symbolicLink)
+      File.CreateSymbolicLink(configuredPath, Path.Combine(_basePath, "missing-target"));
+    else
+      File.WriteAllText(configuredPath, "not a directory");
+
+    Assert.Throws<InvalidOperationException>(() => CreateMigration().Run());
+  }
+
+  [Fact]
+  public void Run_RefusesSecondExecutionAfterMigration()
+  {
+    Directory.CreateDirectory(Path.Combine(_basePath, "legacy-token"));
     CreateMigration().Run();
 
-    Assert.True(File.Exists(Path.Combine(retiredSiteDirectory, "file.txt")));
-    Assert.False(Directory.Exists(Path.Combine(_basePath, "alpha", "beta")));
+    Assert.Throws<InvalidOperationException>(() => CreateMigration().Run());
+  }
+
+  [Fact]
+  public void Run_WithoutMultiSiteConfigurationThrows()
+  {
+    TransferCsOptions options = new() { BasePath = _basePath };
+    SiteResolver resolver = new(Options.Create(options));
+    SiteDataMigration migration = new(Options.Create(options), resolver);
+
+    Assert.Throws<InvalidOperationException>(() => migration.Run());
   }
 
   public void Dispose()

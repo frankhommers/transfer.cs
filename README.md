@@ -238,11 +238,28 @@ Storage is rooted at `BasePath/DataDirectory`, and equal tokens on different hos
 fully isolated. Site IDs use lowercase letters, numbers, and hyphens; hosts are exact
 matches without wildcards.
 
-The first multi-site startup moves existing root-level token directories into the
-`InitialSiteId` data directory and writes `.multisite-migration-v1`. Startup refuses
-collisions or ambiguous non-empty configured site directories instead of merging data.
-Back up `BasePath` before enabling multi-site. After migration, removing or renaming a
-site never causes its old directory to be migrated again.
+Normal startup never moves data. Before the first multi-site startup, run the explicit
+one-time migration command. It moves existing root-level token directories into the
+`InitialSiteId` data directory, reports the number moved, and exits without starting the
+HTTP server. It writes no marker.
+
+```bash
+docker compose stop transfer-cs
+
+# Back up the volume before this step.
+docker compose run --rm transfer-cs migrate-legacy-data
+
+docker compose up -d transfer-cs
+```
+
+The command refuses collisions, symlinks, ambiguous non-empty configured site
+directories, missing multi-site configuration, and a second execution after data has
+already moved. Do not start the multi-site server before running the command: a new
+upload would make the target site directory non-empty and intentionally block migration.
+
+If `.multisite-migration-v1` exists because the short-lived automatic migration version
+already migrated this volume, skip the command and start normally. The file is no longer
+read or written and may be removed after verifying the site directories.
 
 ## Deploy with Traefik
 

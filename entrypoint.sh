@@ -5,4 +5,4 @@ set -e
 chown transfercs:transfercs /data
 
 # Drop to non-root and run the app
-exec su-exec transfercs ./TransferCs.Api
+exec su-exec transfercs ./TransferCs.Api "$@"
