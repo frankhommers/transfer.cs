@@ -1,6 +1,5 @@
-using Microsoft.Extensions.Options;
-using TransferCs.Api.Configuration;
 using TransferCs.Api.Helpers;
+using TransferCs.Api.Services;
 
 namespace TransferCs.Api.Endpoints;
 
@@ -12,7 +11,7 @@ public static class ViewEndpoints
     return app;
   }
 
-  private static IResult HandleRoot(HttpRequest request, IWebHostEnvironment env, IOptions<TransferCsOptions> opts)
+  private static IResult HandleRoot(HttpRequest request, IWebHostEnvironment env, SiteContext siteContext)
   {
     if (AcceptHelper.AcceptsHtml(request))
     {
@@ -20,8 +19,8 @@ public static class ViewEndpoints
       return Results.File(indexPath, "text/html");
     }
 
-    string title = opts.Value.Title;
-    string baseUrl = $"{request.Scheme}://{request.Host}";
+    string title = siteContext.Site.Options.Title;
+    string baseUrl = UrlHelper.ResolveUrl(request, "", siteContext.Site.Options).TrimEnd('/');
     string usage = $"""
                     {title} - Easy file sharing from the command line
 

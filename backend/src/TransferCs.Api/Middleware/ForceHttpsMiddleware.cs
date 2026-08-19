@@ -38,14 +38,6 @@ public class ForceHttpsMiddleware
       return;
     }
 
-    // Skip if behind HTTPS proxy
-    if (string.Equals(request.Headers["X-Forwarded-Proto"].FirstOrDefault(), "https",
-          StringComparison.OrdinalIgnoreCase))
-    {
-      await _next(context);
-      return;
-    }
-
     // Skip .onion hosts
     string host = request.Host.Host;
     if (host.EndsWith(".onion", StringComparison.OrdinalIgnoreCase))

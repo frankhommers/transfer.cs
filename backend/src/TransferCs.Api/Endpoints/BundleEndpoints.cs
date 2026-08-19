@@ -1,5 +1,8 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using Microsoft.Extensions.Options;
+using TransferCs.Api.Configuration;
+using TransferCs.Api.Helpers;
 using TransferCs.Api.Models;
 using TransferCs.Api.Services;
 using TransferCs.Api.Storage;
@@ -11,16 +14,16 @@ public static class BundleEndpoints
   public static WebApplication MapBundleEndpoints(this WebApplication app)
   {
     app.MapGet("/bundle.zip", (HttpRequest request, IStorageProvider storage,
-        MetadataService metadataService, CancellationToken ct) =>
-      HandleZipAsync(request, storage, metadataService, ct));
+        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, CancellationToken ct) =>
+      HandleZipAsync(request, storage, metadataService, optionsAccessor, ct));
 
     app.MapGet("/bundle.tar", (HttpRequest request, IStorageProvider storage,
-        MetadataService metadataService, CancellationToken ct) =>
-      HandleTarAsync(request, storage, metadataService, ct));
+        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, CancellationToken ct) =>
+      HandleTarAsync(request, storage, metadataService, optionsAccessor, ct));
 
     app.MapGet("/bundle.tar.gz", (HttpRequest request, IStorageProvider storage,
-        MetadataService metadataService, CancellationToken ct) =>
-      HandleTarGzAsync(request, storage, metadataService, ct));
+        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, CancellationToken ct) =>
+      HandleTarGzAsync(request, storage, metadataService, optionsAccessor, ct));
 
     return app;
   }
@@ -38,7 +41,8 @@ public static class BundleEndpoints
       {
         string token = entry[..slashIndex];
         string filename = entry[(slashIndex + 1)..];
-        result.Add((token, filename));
+        if (StoragePath.IsSafeSegment(token) && StoragePath.IsSafeSegment(filename))
+          result.Add((token, filename));
       }
     }
 
@@ -49,6 +53,7 @@ public static class BundleEndpoints
     HttpRequest request,
     IStorageProvider storage,
     MetadataService metadataService,
+    IOptions<TransferCsOptions> optionsAccessor,
     CancellationToken ct)
   {
     List<(string Token, string Filename)> files = ParseFiles(request);
@@ -65,7 +70,7 @@ public static class BundleEndpoints
       {
         foreach ((string token, string filename) in files)
         {
-          FileMetadata? metadata = await metadataService.CheckAndLoadAsync(token, filename, true, ct);
+          FileMetadata? metadata = await metadataService.CheckAndLoadAsync(token, filename, false, ct);
           if (metadata == null) continue;
 
           try
@@ -73,6 +78,10 @@ public static class BundleEndpoints
             (Stream stream, _) = await storage.GetAsync(token, filename, null, ct);
             await using (stream)
             {
+              if (!await RecordDownloadAsync(request, token, filename, metadata.Generation,
+                    metadataService, optionsAccessor, ct))
+                continue;
+
               ZipArchiveEntry entry = archive.CreateEntry(filename, CompressionLevel.Fastest);
               await using Stream entryStream = entry.Open();
               await stream.CopyToAsync(entryStream, ct);
@@ -99,6 +108,7 @@ public static class BundleEndpoints
     HttpRequest request,
     IStorageProvider storage,
     MetadataService metadataService,
+    IOptions<TransferCsOptions> optionsAccessor,
     CancellationToken ct)
   {
     List<(string Token, string Filename)> files = ParseFiles(request);
@@ -115,7 +125,7 @@ public static class BundleEndpoints
       {
         foreach ((string token, string filename) in files)
         {
-          FileMetadata? metadata = await metadataService.CheckAndLoadAsync(token, filename, true, ct);
+          FileMetadata? metadata = await metadataService.CheckAndLoadAsync(token, filename, false, ct);
           if (metadata == null) continue;
 
           try
@@ -123,6 +133,10 @@ public static class BundleEndpoints
             (Stream stream, _) = await storage.GetAsync(token, filename, null, ct);
             await using (stream)
             {
+              if (!await RecordDownloadAsync(request, token, filename, metadata.Generation,
+                    metadataService, optionsAccessor, ct))
+                continue;
+
               PaxTarEntry entry = new(TarEntryType.RegularFile, filename)
               {
                 DataStream = stream
@@ -151,6 +165,7 @@ public static class BundleEndpoints
     HttpRequest request,
     IStorageProvider storage,
     MetadataService metadataService,
+    IOptions<TransferCsOptions> optionsAccessor,
     CancellationToken ct)
   {
     List<(string Token, string Filename)> files = ParseFiles(request);
@@ -168,7 +183,7 @@ public static class BundleEndpoints
       {
         foreach ((string token, string filename) in files)
         {
-          FileMetadata? metadata = await metadataService.CheckAndLoadAsync(token, filename, true, ct);
+          FileMetadata? metadata = await metadataService.CheckAndLoadAsync(token, filename, false, ct);
           if (metadata == null) continue;
 
           try
@@ -176,6 +191,10 @@ public static class BundleEndpoints
             (Stream stream, _) = await storage.GetAsync(token, filename, null, ct);
             await using (stream)
             {
+              if (!await RecordDownloadAsync(request, token, filename, metadata.Generation,
+                    metadataService, optionsAccessor, ct))
+                continue;
+
               PaxTarEntry entry = new(TarEntryType.RegularFile, filename)
               {
                 DataStream = stream
@@ -198,5 +217,16 @@ public static class BundleEndpoints
       await tempFile.DisposeAsync();
       throw;
     }
+  }
+
+  private static async Task<bool> RecordDownloadAsync(HttpRequest request, string token, string filename,
+    string expectedGeneration, MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor,
+    CancellationToken ct)
+  {
+    TransferCsOptions options = optionsAccessor.Value;
+    string? downloadIp = options.DownloadLogEnabled ? ClientIpHelper.Get(request.HttpContext) : null;
+    FileMetadata? metadata = await metadataService.CheckAndRecordDownloadAsync(
+      token, filename, downloadIp, Math.Max(1, options.DownloadLogMaxEntries), expectedGeneration, ct);
+    return metadata != null;
   }
 }

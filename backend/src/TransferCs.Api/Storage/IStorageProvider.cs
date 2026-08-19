@@ -11,6 +11,8 @@ public interface IStorageProvider
     string contentType, ulong contentLength, CancellationToken ct = default);
 
   Task<bool> ExistsAsync(string token, CancellationToken ct = default);
+  Task<bool> TryReserveTokenAsync(string token, CancellationToken ct = default);
+  Task ReleaseTokenAsync(string token, CancellationToken ct = default);
   Task DeleteAsync(string token, string filename, CancellationToken ct = default);
   Task PurgeAsync(TimeSpan maxAge, CancellationToken ct = default);
   bool IsNotExist(Exception ex);

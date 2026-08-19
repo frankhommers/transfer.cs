@@ -13,6 +13,8 @@ public class TransferCsOptions
   public int PurgeIntervalHours { get; set; }
   public int RateLimitRequestsPerMinute { get; set; }
   public int RandomTokenLength { get; set; } = 10;
+  public bool DownloadLogEnabled { get; set; }
+  public int DownloadLogMaxEntries { get; set; } = 50;
   public bool ForceHttps { get; set; }
   public string EmailContact { get; set; } = "";
   public string ClamAvHost { get; set; } = "";
@@ -28,6 +30,9 @@ public class TransferCsOptions
   public string BaseUrl { get; set; } = "";
   public string ProxyPath { get; set; } = "";
   public string ProxyPort { get; set; } = "";
+  public string TrustedProxies { get; set; } = "";
+  public string InitialSiteId { get; set; } = "";
+  public Dictionary<string, SiteOptions> Sites { get; set; } = [];
 
   public long MaxUploadSizeBytes => MaxUploadSizeKb * 1024;
 

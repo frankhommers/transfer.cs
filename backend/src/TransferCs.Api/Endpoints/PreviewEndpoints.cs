@@ -1,6 +1,4 @@
-using Microsoft.Extensions.Options;
 using QRCoder;
-using TransferCs.Api.Configuration;
 using TransferCs.Api.Helpers;
 using TransferCs.Api.Models;
 using TransferCs.Api.Services;
@@ -20,10 +18,10 @@ public static class PreviewEndpoints
     string filename,
     HttpRequest request,
     MetadataService metadataService,
-    IOptions<TransferCsOptions> optionsAccessor,
+    SiteContext siteContext,
     CancellationToken ct)
   {
-    TransferCsOptions options = optionsAccessor.Value;
+    Configuration.TransferCsOptions options = siteContext.Site.Options;
     FileMetadata? metadata = await metadataService.LoadAsync(token, filename, ct);
     if (metadata == null)
       return Results.NotFound();

@@ -9,8 +9,7 @@ public static class UrlHelper
     if (!string.IsNullOrEmpty(options.BaseUrl))
       return $"{options.BaseUrl.TrimEnd('/')}{path}";
 
-    string scheme = request.Headers["X-Forwarded-Proto"].FirstOrDefault()
-                    ?? request.Scheme;
+    string scheme = request.Scheme;
 
     string host = request.Host.Host;
     int? port = request.Host.Port;

@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Options;
 using TransferCs.Api.Configuration;
+using TransferCs.Api.Helpers;
 using TransferCs.Api.Services;
 
 namespace TransferCs.Api.Middleware;
@@ -10,7 +11,7 @@ public class BasicAuthMiddleware
   private readonly RequestDelegate _next;
   private readonly TransferCsOptions _options;
   private readonly HtpasswdService? _htpasswdService;
-  private readonly HashSet<string> _authIpWhitelist;
+  private readonly IpListMatcher _authIpWhitelist;
 
   public BasicAuthMiddleware(RequestDelegate next, IOptions<TransferCsOptions> options)
   {
@@ -20,11 +21,20 @@ public class BasicAuthMiddleware
     if (!string.IsNullOrEmpty(_options.HttpAuthHtpasswd))
       _htpasswdService = new HtpasswdService(_options.HttpAuthHtpasswd);
 
-    _authIpWhitelist = ParseList(_options.HttpAuthIpWhitelist);
+    _authIpWhitelist = new IpListMatcher(_options.HttpAuthIpWhitelist);
   }
 
   public async Task InvokeAsync(HttpContext context)
   {
+    // Admin endpoints authenticate with the per-file Admin-Token header. Requiring global
+    // basic auth as well would turn a missing admin token into 401 instead of the intended
+    // non-enumerable 404 response.
+    if (context.Request.Path.StartsWithSegments("/api/admin"))
+    {
+      await _next(context);
+      return;
+    }
+
     // Only protect PUT/POST/DELETE methods
     string method = context.Request.Method;
     if (method != "PUT" && method != "POST" && method != "DELETE")
@@ -42,8 +52,8 @@ public class BasicAuthMiddleware
     }
 
     // Check IP whitelist for auth bypass
-    string remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "";
-    if (_authIpWhitelist.Count > 0 && _authIpWhitelist.Contains(remoteIp))
+    string remoteIp = ClientIpHelper.Get(context);
+    if (_authIpWhitelist.Matches(remoteIp))
     {
       await _next(context);
       return;
@@ -99,14 +109,5 @@ public class BasicAuthMiddleware
   {
     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
     context.Response.Headers.WWWAuthenticate = "Basic realm=\"transfer.sh\"";
-  }
-
-  private static HashSet<string> ParseList(string list)
-  {
-    if (string.IsNullOrWhiteSpace(list))
-      return [];
-
-    return list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-      .ToHashSet(StringComparer.OrdinalIgnoreCase);
   }
 }

@@ -56,4 +56,48 @@ public class UploadEndpointsTests : IClassFixture<WebApplicationFactory<Program>
     string body = await response.Content.ReadAsStringAsync();
     Assert.Contains("/upload.txt", body);
   }
+
+  [Fact]
+  public async Task ConcurrentPut_WithSameCustomToken_AllowsOnlyOneUpload()
+  {
+    string token = $"concurrent-{Guid.NewGuid():N}";
+    HttpRequestMessage first = CreatePutRequest(token, "first");
+    HttpRequestMessage second = CreatePutRequest(token, "second");
+
+    HttpResponseMessage[] responses = await Task.WhenAll(
+      _client.SendAsync(first),
+      _client.SendAsync(second));
+
+    Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
+    Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
+    foreach (HttpResponseMessage response in responses)
+      response.Dispose();
+  }
+
+  [Fact]
+  public async Task Multipart_WithCustomTokenAndMultipleFiles_IsRejectedBeforeUpload()
+  {
+    string token = $"multi-{Guid.NewGuid():N}";
+    using MultipartFormDataContent content = new();
+    content.Add(new StringContent("first"), "file", "first.txt");
+    content.Add(new StringContent("second"), "file", "second.txt");
+    using HttpRequestMessage request = new(HttpMethod.Post, "/") { Content = content };
+    request.Headers.Add("Token", token);
+
+    using HttpResponseMessage response = await _client.SendAsync(request);
+
+    Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    using HttpResponseMessage download = await _client.GetAsync($"/{token}/first.txt");
+    Assert.Equal(HttpStatusCode.NotFound, download.StatusCode);
+  }
+
+  private static HttpRequestMessage CreatePutRequest(string token, string content)
+  {
+    HttpRequestMessage request = new(HttpMethod.Put, "/put/concurrent.txt")
+    {
+      Content = new StringContent(content)
+    };
+    request.Headers.Add("Token", token);
+    return request;
+  }
 }

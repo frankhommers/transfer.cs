@@ -21,6 +21,8 @@ public static partial class TokenService
     });
   }
 
+  public static string GenerateAdminToken() => Generate(32);
+
   public static string? ValidateCustomToken(string token)
   {
     if (token.Length < 4)

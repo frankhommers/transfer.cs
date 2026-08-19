@@ -6,34 +6,49 @@ namespace TransferCs.Api.Services;
 
 public class PurgeBackgroundService : BackgroundService
 {
-  private readonly IStorageProvider _storage;
+  private readonly SiteStorageFactory _storageFactory;
+  private readonly SiteResolver _siteResolver;
   private readonly TransferCsOptions _options;
   private readonly ILogger<PurgeBackgroundService> _logger;
 
   public PurgeBackgroundService(
-    IStorageProvider storage,
+    SiteStorageFactory storageFactory,
+    SiteResolver siteResolver,
     IOptions<TransferCsOptions> options,
     ILogger<PurgeBackgroundService> logger)
   {
-    _storage = storage;
+    _storageFactory = storageFactory;
+    _siteResolver = siteResolver;
     _options = options.Value;
     _logger = logger;
   }
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
-    if (_options.PurgeDays <= 0 || _options.PurgeIntervalHours <= 0)
+    if (_options.PurgeIntervalHours <= 0)
       return;
 
     TimeSpan interval = TimeSpan.FromHours(_options.PurgeIntervalHours);
-    TimeSpan maxAge = TimeSpan.FromDays(_options.PurgeDays);
-
     while (!stoppingToken.IsCancellationRequested)
       try
       {
         await Task.Delay(interval, stoppingToken);
-        _logger.LogInformation("Running purge for files older than {PurgeDays} days", _options.PurgeDays);
-        await _storage.PurgeAsync(maxAge, stoppingToken);
+        IEnumerable<ResolvedSite> sites = _siteResolver.IsMultiSite
+          ? _siteResolver.Sites
+          : [_siteResolver.LegacySite];
+        foreach (ResolvedSite site in sites.Where(site => site.Options.PurgeDays > 0))
+        {
+          try
+          {
+            _logger.LogInformation("Running purge for site {SiteId}: files older than {PurgeDays} days",
+              site.Id, site.Options.PurgeDays);
+            await _storageFactory.Get(site).PurgeAsync(TimeSpan.FromDays(site.Options.PurgeDays), stoppingToken);
+          }
+          catch (Exception ex)
+          {
+            _logger.LogError(ex, "Error purging site {SiteId}", site.Id);
+          }
+        }
       }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
       {

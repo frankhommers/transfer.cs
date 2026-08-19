@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using TransferCs.Api.Configuration;
 using TransferCs.Api.Endpoints;
+using TransferCs.Api.Helpers;
 using TransferCs.Api.Middleware;
 using TransferCs.Api.Services;
 using TransferCs.Api.Storage;
@@ -17,11 +19,23 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // Configuration
 builder.Services.Configure<TransferCsOptions>(builder.Configuration.GetSection(TransferCsOptions.SectionName));
 TransferCsOptions config = builder.Configuration.GetSection(TransferCsOptions.SectionName).Get<TransferCsOptions>() ??
-                           new TransferCsOptions();
+                            new TransferCsOptions();
+if (config.RandomTokenLength is < 6 or > 128)
+  throw new InvalidOperationException("TransferCs:RandomTokenLength must be between 6 and 128.");
+
+builder.Services.AddOptions<ForwardedHeadersOptions>()
+  .Configure<IOptions<TransferCsOptions>>((options, transferOptions) =>
+    ForwardedHeadersSetup.Configure(options, transferOptions.Value.TrustedProxies));
 
 // Services
-builder.Services.AddSingleton<IStorageProvider>(new LocalStorageProvider(config.BasePath));
-builder.Services.AddSingleton<MetadataService>();
+builder.Services.AddSingleton<SiteResolver>();
+builder.Services.AddSingleton<SiteStorageFactory>();
+builder.Services.AddSingleton<SiteDataMigration>();
+builder.Services.AddSingleton<KeyedLock>();
+builder.Services.AddScoped<SiteContext>();
+builder.Services.AddScoped<IStorageProvider>(services =>
+  services.GetRequiredService<SiteStorageFactory>().Get(services.GetRequiredService<SiteContext>().Site));
+builder.Services.AddScoped<MetadataService>();
 builder.Services.AddHostedService<PurgeBackgroundService>();
 builder.Services.AddHttpClient();
 
@@ -31,7 +45,7 @@ if (config.RateLimitRequestsPerMinute > 0)
   {
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
       RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        ClientIpHelper.Get(context) is { Length: > 0 } ip ? ip : "unknown",
         _ => new FixedWindowRateLimiterOptions
         {
           PermitLimit = config.RateLimitRequestsPerMinute,
@@ -59,17 +73,20 @@ if (!string.IsNullOrEmpty(config.CorsDomains))
 // Kestrel limits for large file uploads
 builder.WebHost.ConfigureKestrel(options =>
 {
-  options.Limits.MaxRequestBodySize = config.MaxUploadSizeBytes > 0
-    ? config.MaxUploadSizeBytes
-    : null; // null = unlimited
+  options.Limits.MaxRequestBodySize = UploadLimitHelper.ResolveKestrelLimit(config);
   options.Limits.MinRequestBodyDataRate = null;
   options.Limits.KeepAliveTimeout = TimeSpan.FromHours(24);
 });
 
 WebApplication app = builder.Build();
+app.Services.GetRequiredService<SiteDataMigration>().Run();
 
 // Middleware pipeline (order matters)
+app.UseForwardedHeaders();
+app.UseMiddleware<SiteResolutionMiddleware>();
+
 app.UseMiddleware<LoveHeaderMiddleware>();
+app.UseMiddleware<AdminSecurityHeadersMiddleware>();
 app.UseMiddleware<IpFilterMiddleware>();
 app.UseMiddleware<ForceHttpsMiddleware>();
 
@@ -85,19 +102,19 @@ app.UseMiddleware<BasicAuthMiddleware>();
 app.MapStaticAssets();
 
 // Endpoints
-app.MapGet("/health", (IStorageProvider storage) =>
+app.MapGet("/health", (SiteStorageFactory storageFactory) =>
   Results.Json(new TransferCs.Api.Models.HealthResponse
   {
     Status = "healthy",
-    Storage = storage.Type
+    Storage = storageFactory.Type
   }, TransferCs.Api.Models.AppJsonContext.Default.HealthResponse));
 
-app.MapGet("/api/config", (IOptions<TransferCsOptions> opts) =>
+app.MapGet("/api/config", (SiteContext siteContext) =>
   Results.Json(new TransferCs.Api.Models.PublicConfig
   {
-    Title = opts.Value.Title,
-    PurgeDays = opts.Value.PurgeDays,
-    MaxUploadSizeKb = opts.Value.MaxUploadSizeKb
+    Title = siteContext.Site.Options.Title,
+    PurgeDays = siteContext.Site.Options.PurgeDays,
+    MaxUploadSizeKb = siteContext.Site.Options.MaxUploadSizeKb
   }, TransferCs.Api.Models.AppJsonContext.Default.PublicConfig));
 
 app.MapViewEndpoints();
@@ -108,6 +125,7 @@ app.MapBundleEndpoints();
 app.MapScanEndpoints();
 app.MapPreviewEndpoints();
 app.MapSkillEndpoints();
+app.MapAdminEndpoints();
 
 app.MapFallbackToFile("index.html");
 

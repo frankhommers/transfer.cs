@@ -2,6 +2,7 @@ namespace TransferCs.Api.Storage;
 
 public class LocalStorageProvider : IStorageProvider
 {
+  private static readonly TimeSpan ReservationLifetime = TimeSpan.FromDays(1);
   private readonly string _basePath;
 
   public LocalStorageProvider(string basePath)
@@ -15,17 +16,34 @@ public class LocalStorageProvider : IStorageProvider
   public async Task PutAsync(string token, string filename, Stream content,
     string contentType, ulong contentLength, CancellationToken ct = default)
   {
+    StoragePath.EnsureSafeSegment(token, nameof(token));
+    StoragePath.EnsureSafeSegment(filename, nameof(filename));
     string dir = Path.Combine(_basePath, token);
     Directory.CreateDirectory(dir);
 
     string filePath = Path.Combine(dir, filename);
-    await using FileStream fs = new(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-    await content.CopyToAsync(fs, ct);
+    string tempPath = Path.Combine(dir, $".{filename}.{Guid.NewGuid():N}.tmp");
+    try
+    {
+      await using (FileStream fs = new(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+      {
+        await content.CopyToAsync(fs, ct);
+        await fs.FlushAsync(ct);
+      }
+
+      File.Move(tempPath, filePath, true);
+    }
+    finally
+    {
+      File.Delete(tempPath);
+    }
   }
 
   public Task<(Stream Content, ulong ContentLength)> GetAsync(
     string token, string filename, StorageRange? range, CancellationToken ct = default)
   {
+    StoragePath.EnsureSafeSegment(token, nameof(token));
+    StoragePath.EnsureSafeSegment(filename, nameof(filename));
     string filePath = Path.Combine(_basePath, token, filename);
     FileInfo fi = new(filePath);
     if (!fi.Exists)
@@ -47,6 +65,8 @@ public class LocalStorageProvider : IStorageProvider
 
   public Task<ulong> HeadAsync(string token, string filename, CancellationToken ct = default)
   {
+    StoragePath.EnsureSafeSegment(token, nameof(token));
+    StoragePath.EnsureSafeSegment(filename, nameof(filename));
     string filePath = Path.Combine(_basePath, token, filename);
     FileInfo fi = new(filePath);
     if (!fi.Exists)
@@ -57,12 +77,50 @@ public class LocalStorageProvider : IStorageProvider
 
   public Task<bool> ExistsAsync(string token, CancellationToken ct = default)
   {
+    StoragePath.EnsureSafeSegment(token, nameof(token));
     string dir = Path.Combine(_basePath, token);
     return Task.FromResult(Directory.Exists(dir));
   }
 
+  public Task<bool> TryReserveTokenAsync(string token, CancellationToken ct = default)
+  {
+    StoragePath.EnsureSafeSegment(token, nameof(token));
+    ct.ThrowIfCancellationRequested();
+    string dir = Path.Combine(_basePath, token);
+    string reservationPath = Path.Combine(dir, ".upload-reservation");
+    if (File.Exists(reservationPath) &&
+        File.GetLastWriteTimeUtc(reservationPath) < DateTime.UtcNow - ReservationLifetime)
+      File.Delete(reservationPath);
+
+    if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any())
+      return Task.FromResult(false);
+
+    Directory.CreateDirectory(dir);
+    try
+    {
+      using FileStream reservation = new(reservationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+      return Task.FromResult(true);
+    }
+    catch (IOException)
+    {
+      return Task.FromResult(false);
+    }
+  }
+
+  public Task ReleaseTokenAsync(string token, CancellationToken ct = default)
+  {
+    StoragePath.EnsureSafeSegment(token, nameof(token));
+    string dir = Path.Combine(_basePath, token);
+    File.Delete(Path.Combine(dir, ".upload-reservation"));
+    if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+      Directory.Delete(dir);
+    return Task.CompletedTask;
+  }
+
   public Task DeleteAsync(string token, string filename, CancellationToken ct = default)
   {
+    StoragePath.EnsureSafeSegment(token, nameof(token));
+    StoragePath.EnsureSafeSegment(filename, nameof(filename));
     string filePath = Path.Combine(_basePath, token, filename);
     if (File.Exists(filePath))
       File.Delete(filePath);
@@ -83,15 +141,38 @@ public class LocalStorageProvider : IStorageProvider
 
     foreach (string tokenDir in Directory.GetDirectories(_basePath))
     {
-      foreach (string file in Directory.GetFiles(tokenDir))
+      string reservationPath = Path.Combine(tokenDir, ".upload-reservation");
+      if (File.Exists(reservationPath))
       {
-        ct.ThrowIfCancellationRequested();
-        FileInfo fi = new(file);
-        if (fi.CreationTimeUtc < cutoff)
-          fi.Delete();
+        if (File.GetLastWriteTimeUtc(reservationPath) >= DateTime.UtcNow - ReservationLifetime)
+          continue;
+        File.Delete(reservationPath);
       }
 
-      // Remove empty directories
+      string[] files = Directory.GetFiles(tokenDir);
+      IEnumerable<string> payloads = files.Where(file =>
+        !file.EndsWith(".metadata", StringComparison.Ordinal) || File.Exists($"{file}.metadata"));
+      foreach (string payload in payloads)
+      {
+        ct.ThrowIfCancellationRequested();
+        FileInfo fileInfo = new(payload);
+        if (fileInfo.CreationTimeUtc >= cutoff)
+          continue;
+
+        fileInfo.Delete();
+        File.Delete($"{payload}.metadata");
+      }
+
+      foreach (string metadata in Directory.GetFiles(tokenDir, "*.metadata"))
+      {
+        if (File.Exists($"{metadata}.metadata"))
+          continue;
+
+        string payload = metadata[..^".metadata".Length];
+        if (!File.Exists(payload))
+          File.Delete(metadata);
+      }
+
       if (Directory.GetFiles(tokenDir).Length == 0 && Directory.GetDirectories(tokenDir).Length == 0)
         Directory.Delete(tokenDir);
     }

@@ -1,5 +1,4 @@
 using TransferCs.Api.Services;
-using TransferCs.Api.Storage;
 
 namespace TransferCs.Api.Endpoints;
 
@@ -15,23 +14,12 @@ public static class DeleteEndpoints
     string token,
     string filename,
     string deletionToken,
-    IStorageProvider storage,
     MetadataService metadataService,
     CancellationToken ct)
   {
-    bool isValid = await metadataService.ValidateDeletionTokenAsync(token, filename, deletionToken, ct);
-    if (!isValid)
+    if (!await metadataService.DeleteWithDeletionTokenAsync(token, filename, deletionToken, ct))
       return Results.NotFound();
 
-    try
-    {
-      await storage.DeleteAsync(token, filename, ct);
-      await storage.DeleteAsync(token, $"{filename}.metadata", ct);
-      return Results.Ok("File deleted");
-    }
-    catch (Exception ex) when (storage.IsNotExist(ex))
-    {
-      return Results.NotFound();
-    }
+    return Results.Ok("File deleted");
   }
 }

@@ -4,6 +4,8 @@ namespace TransferCs.Api.Models;
 
 public class FileMetadata
 {
+  [JsonPropertyName("Generation")] public string Generation { get; set; } = "";
+
   [JsonPropertyName("ContentType")] public string ContentType { get; set; } = "";
 
   [JsonPropertyName("ContentLength")] public long ContentLength { get; set; }
@@ -15,6 +17,12 @@ public class FileMetadata
   [JsonPropertyName("MaxDate")] public DateTime MaxDate { get; set; } = DateTime.MinValue;
 
   [JsonPropertyName("DeletionToken")] public string DeletionToken { get; set; } = "";
+
+  [JsonPropertyName("AdminToken")] public string AdminToken { get; set; } = "";
+
+  [JsonPropertyName("DownloadLogTotal")] public int DownloadLogTotal { get; set; }
+
+  [JsonPropertyName("DownloadLog")] public List<DownloadEntry> DownloadLog { get; set; } = [];
 
   [JsonPropertyName("Encrypted")] public bool Encrypted { get; set; }
 

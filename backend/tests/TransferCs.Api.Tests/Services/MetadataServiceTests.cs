@@ -37,7 +37,8 @@ public class MetadataServiceTests : IDisposable
       ContentLength = 1024,
       Downloads = 5,
       MaxDownloads = 10,
-      DeletionToken = "del123",
+      DeletionToken = "delete123",
+      AdminToken = "del123",
       Encrypted = false
     };
 
@@ -49,7 +50,8 @@ public class MetadataServiceTests : IDisposable
     Assert.Equal(1024, loaded.ContentLength);
     Assert.Equal(5, loaded.Downloads);
     Assert.Equal(10, loaded.MaxDownloads);
-    Assert.Equal("del123", loaded.DeletionToken);
+    Assert.Equal("delete123", loaded.DeletionToken);
+    Assert.Equal("del123", loaded.AdminToken);
     Assert.False(loaded.Encrypted);
   }
 
@@ -74,5 +76,16 @@ public class MetadataServiceTests : IDisposable
     FileMetadata? loaded = await _service.LoadAsync("token2", "file.txt");
     Assert.NotNull(loaded);
     Assert.Equal(1, loaded.Downloads);
+  }
+
+  [Fact]
+  public async Task EmptyStoredAdminToken_DoesNotAuthorizeEmptyHeader()
+  {
+    FileMetadata metadata = new() { AdminToken = "" };
+    await _service.SaveAsync("token3", "file.txt", metadata);
+
+    FileMetadata? loaded = await _service.LoadForAdminAsync("token3", "file.txt", "");
+
+    Assert.Null(loaded);
   }
 }

@@ -1,6 +1,5 @@
-using Microsoft.Extensions.Options;
-using TransferCs.Api.Configuration;
 using TransferCs.Api.Helpers;
+using TransferCs.Api.Services;
 
 namespace TransferCs.Api.Endpoints;
 
@@ -20,9 +19,9 @@ public static class SkillEndpoints
 
   private static IResult HandleSkillMd(
     HttpRequest request,
-    IOptions<TransferCsOptions> optionsAccessor)
+    SiteContext siteContext)
   {
-    TransferCsOptions options = optionsAccessor.Value;
+    Configuration.TransferCsOptions options = siteContext.Site.Options;
     string baseUrl = UrlHelper.ResolveUrl(request, "", options).TrimEnd('/');
 
     _skillTemplate ??= LoadTemplate("SKILL.md");
@@ -46,9 +45,9 @@ public static class SkillEndpoints
 
   private static IResult HandleInstallScript(
     HttpRequest request,
-    IOptions<TransferCsOptions> optionsAccessor)
+    SiteContext siteContext)
   {
-    TransferCsOptions options = optionsAccessor.Value;
+    Configuration.TransferCsOptions options = siteContext.Site.Options;
     string baseUrl = UrlHelper.ResolveUrl(request, "", options).TrimEnd('/');
 
     _installScript ??= LoadTemplate("install.sh");
@@ -59,9 +58,9 @@ public static class SkillEndpoints
 
   private static IResult HandleTransferScript(
     HttpRequest request,
-    IOptions<TransferCsOptions> optionsAccessor)
+    SiteContext siteContext)
   {
-    TransferCsOptions options = optionsAccessor.Value;
+    Configuration.TransferCsOptions options = siteContext.Site.Options;
     string baseUrl = UrlHelper.ResolveUrl(request, "", options).TrimEnd('/');
 
     _transferScript ??= LoadTemplate("transfer");

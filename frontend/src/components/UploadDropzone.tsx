@@ -1,12 +1,13 @@
 import {useState, useCallback} from 'react'
 import {useDropzone} from 'react-dropzone'
-import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck} from 'lucide-react'
+import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound} from 'lucide-react'
 import {Progress} from '@/components/ui/progress'
 
 interface UploadResult {
   filename: string
   url: string
   deleteUrl: string
+  adminUrl: string
   expires: string | null
   checksum: string
   failed: boolean
@@ -64,7 +65,7 @@ async function copyToClipboard(text: string) {
 function uploadFile(
   file: File,
   onProgress: (loaded: number, total: number) => void
-): Promise<{ url: string; deleteUrl: string; expires: string | null; checksum: string }> {
+): Promise<{ url: string; deleteUrl: string; adminUrl: string; expires: string | null; checksum: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', `/${encodeURIComponent(file.name)}`)
@@ -80,6 +81,7 @@ function uploadFile(
         resolve({
           url: xhr.responseText.trim(),
           deleteUrl: xhr.getResponseHeader('X-Url-Delete') || '',
+          adminUrl: xhr.getResponseHeader('X-Url-Admin') || '',
           expires: xhr.getResponseHeader('Expires'),
           // "sha256:<hex>" - keep only the digest, that is what shasum compares
           checksum: (xhr.getResponseHeader('Checksum') || '').replace(/^sha256:/i, ''),
@@ -102,6 +104,7 @@ export function UploadDropzone() {
   const [results, setResults] = useState<UploadResult[]>([])
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [copiedChecksumIndex, setCopiedChecksumIndex] = useState<number | null>(null)
+  const [copiedAdminIndex, setCopiedAdminIndex] = useState<number | null>(null)
 
   const onDrop = useCallback(async (files: File[]) => {
     setUploading(true)
@@ -127,7 +130,7 @@ export function UploadDropzone() {
           prev.map((p, idx) => idx === i ? {...p, done: true} : p)
         )
         newResults.push({
-          filename: file.name, url: '', deleteUrl: '', expires: null, checksum: '', failed: true,
+          filename: file.name, url: '', deleteUrl: '', adminUrl: '', expires: null, checksum: '', failed: true,
         })
       }
     }
@@ -148,6 +151,12 @@ export function UploadDropzone() {
     await copyToClipboard(verifyCommand(result))
     setCopiedChecksumIndex(index)
     setTimeout(() => setCopiedChecksumIndex(null), 2000)
+  }
+
+  const handleCopyAdmin = async (adminUrl: string, index: number) => {
+    await copyToClipboard(adminUrl)
+    setCopiedAdminIndex(index)
+    setTimeout(() => setCopiedAdminIndex(null), 2000)
   }
 
   const handleDelete = async (result: UploadResult, index: number) => {
@@ -277,6 +286,21 @@ export function UploadDropzone() {
                         <Check className="h-4 w-4 text-green-500"/>
                       ) : (
                         <ShieldCheck className="h-4 w-4"/>
+                      )}
+                    </button>
+                  )}
+                  {result.adminUrl && (
+                    <button
+                      type="button"
+                      className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                      onClick={() => handleCopyAdmin(result.adminUrl, index)}
+                      aria-label="Copy private admin link"
+                      title="Copy private admin link"
+                    >
+                      {copiedAdminIndex === index ? (
+                        <Check className="h-4 w-4 text-green-500"/>
+                      ) : (
+                        <KeyRound className="h-4 w-4"/>
                       )}
                     </button>
                   )}

@@ -134,8 +134,8 @@ public static class DownloadEndpoints
     IOptions<TransferCsOptions> optionsAccessor,
     CancellationToken ct)
   {
-    FileMetadata? metadata = await metadataService.CheckAndLoadAsync(token, filename, true, ct);
-    if (metadata == null)
+    FileMetadata? initialMetadata = await metadataService.CheckAndLoadAsync(token, filename, false, ct);
+    if (initialMetadata == null)
       return Results.NotFound();
 
     try
@@ -145,19 +145,31 @@ public static class DownloadEndpoints
 
       (Stream stream, ulong contentLength) = await storage.GetAsync(token, filename, range, ct);
 
-      string contentType = metadata.ContentType;
+      string contentType = initialMetadata.ContentType;
 
       // Decrypt if requested and file is encrypted
       string decryptPassword = (request.Headers["Decrypt-Password"].FirstOrDefault() ?? request.Headers["X-Decrypt-Password"].FirstOrDefault()) ?? "";
       bool decrypted = false;
-      if (!string.IsNullOrEmpty(decryptPassword) && metadata.Encrypted)
+      if (!string.IsNullOrEmpty(decryptPassword) && initialMetadata.Encrypted)
       {
         decrypted = true;
         stream = await EncryptionService.DecryptAsync(stream, decryptPassword);
         contentLength = (ulong)stream.Length;
-        if (!string.IsNullOrEmpty(metadata.DecryptedContentType))
-          contentType = metadata.DecryptedContentType;
+        if (!string.IsNullOrEmpty(initialMetadata.DecryptedContentType))
+          contentType = initialMetadata.DecryptedContentType;
       }
+
+      await using Stream responseStream = stream;
+
+      TransferCsOptions options = optionsAccessor.Value;
+      string? downloadIp = options.DownloadLogEnabled
+        ? ClientIpHelper.Get(request.HttpContext)
+        : null;
+      FileMetadata? metadata = await metadataService.CheckAndRecordDownloadAsync(
+        token, filename, downloadIp, Math.Max(1, options.DownloadLogMaxEntries),
+        initialMetadata.Generation, ct);
+      if (metadata == null)
+        return Results.NotFound();
 
       string disposition = action == "inline"
         ? $"inline; filename=\"{filename}\""
@@ -183,15 +195,13 @@ public static class DownloadEndpoints
         response.Headers.ContentRange = range.ContentRange;
         response.ContentType = contentType;
         response.ContentLength = (long)contentLength;
-        await stream.CopyToAsync(response.Body, ct);
-        await stream.DisposeAsync();
+        await responseStream.CopyToAsync(response.Body, ct);
         return Results.Empty;
       }
 
       response.ContentType = contentType;
       response.ContentLength = (long)contentLength;
-      await stream.CopyToAsync(response.Body, ct);
-      await stream.DisposeAsync();
+      await responseStream.CopyToAsync(response.Body, ct);
       return Results.Empty;
     }
     catch (Exception ex) when (storage.IsNotExist(ex))

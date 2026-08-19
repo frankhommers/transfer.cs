@@ -16,6 +16,8 @@ Easy and fast file sharing from the command line. Inspired by [transfer.sh](http
 - AI agent skill file at `/SKILL.md`
 - ClamAV and VirusTotal scanning
 - Rate limiting, IP filtering, basic auth
+- Private per-upload admin links with optional download IP history
+- Strict multi-site hosting with isolated branding, limits, and storage
 
 ## Quick Start
 
@@ -106,6 +108,7 @@ cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Passw
 | Header | Description |
 |--------|---------|
 | `X-Url-Delete` | URL to delete the uploaded file |
+| `X-Url-Admin` | Private admin URL; its capability token is kept in the URL fragment |
 | `Expires` | Expiry date of the upload |
 | `Checksum` | `sha256:<hex>` of the file as received (also sent as `X-Checksum`) |
 | `X-Remaining-Downloads` | Remaining download count |
@@ -151,6 +154,19 @@ The installable CLI has a `--verify` flag that does the hashing for you:
 transfer ./big.iso --verify
 ```
 
+### Private file administration
+
+Every new upload returns an `X-Url-Admin` header. Keep this URL private: it opens a
+non-discoverable page with file metadata, the checksum, download counters, optional IP
+history, and permanent deletion. The admin capability is stored after `#` and is never
+sent in a URL, query string, referrer, or proxy access log. It is separate from the
+legacy deletion capability in `X-Url-Delete`.
+
+Download IP history is disabled by default. Enable it with
+`TransferCs__DownloadLogEnabled=true`; `DownloadLogMaxEntries` bounds the retained
+entries while the total counter continues increasing. Full client IP addresses are
+stored, so enable this only when your privacy policy and local law permit it.
+
 ### AI Agent Integration
 
 Every instance serves a dynamic `/SKILL.md` with instance-specific usage instructions,
@@ -173,12 +189,60 @@ All settings are configured via environment variables with the `TransferCs__` pr
 | `TransferCs__PurgeIntervalHours` | `0` (disabled) | How often to run purge |
 | `TransferCs__MaxUploadSizeKb` | `0` (unlimited) | Max upload size in KB |
 | `TransferCs__RandomTokenLength` | `10` | Length of generated tokens |
+| `TransferCs__DownloadLogEnabled` | `false` | Store client IP and UTC time for accepted GET downloads |
+| `TransferCs__DownloadLogMaxEntries` | `50` | Maximum recent IP log entries retained per file |
 | `TransferCs__ForceHttps` | `false` | Redirect HTTP to HTTPS |
 | `TransferCs__RateLimitRequestsPerMinute` | `0` (disabled) | Rate limit per IP |
+| `TransferCs__TrustedProxies` | *(empty)* | Proxy IPs/CIDRs trusted for `X-Forwarded-*`; use `*` only when direct access is impossible |
 | `TransferCs__ClamAvHost` | *(empty)* | ClamAV host for virus scanning |
 | `TransferCs__PerformClamAvPrescan` | `false` | Scan uploads before storing |
 | `TransferCs__VirusTotalKey` | *(empty)* | VirusTotal API key |
 | `TransferCs__CorsDomains` | *(empty)* | Comma-separated CORS origins |
+
+### Multi-site configuration
+
+When `Sites` is configured, every request except exact `/health` must match a configured
+host. Unknown hosts receive `421 Misdirected Request`. Host matching happens after
+trusted forwarded-header processing, so configure `TrustedProxies` when TLS terminates
+at a reverse proxy.
+
+```json
+{
+  "TransferCs": {
+    "BasePath": "/data",
+    "InitialSiteId": "public",
+    "Sites": {
+      "public": {
+        "Hosts": ["transfer.example.com"],
+        "Title": "Public transfers",
+        "BaseUrl": "https://transfer.example.com",
+        "DataDirectory": "public",
+        "PurgeDays": 14,
+        "MaxUploadSizeKb": 1048576,
+        "RandomTokenLength": 12
+      },
+      "internal": {
+        "Hosts": ["send.internal.example.com"],
+        "Title": "Internal transfers",
+        "DataDirectory": "internal",
+        "PurgeDays": 3,
+        "MaxUploadSizeKb": 10485760
+      }
+    }
+  }
+}
+```
+
+All site fields except `Hosts` are overrides. `DataDirectory` defaults to the site ID.
+Storage is rooted at `BasePath/DataDirectory`, and equal tokens on different hosts remain
+fully isolated. Site IDs use lowercase letters, numbers, and hyphens; hosts are exact
+matches without wildcards.
+
+The first multi-site startup moves existing root-level token directories into the
+`InitialSiteId` data directory and writes `.multisite-migration-v1`. Startup refuses
+collisions or ambiguous non-empty configured site directories instead of merging data.
+Back up `BasePath` before enabling multi-site. After migration, removing or renaming a
+site never causes its old directory to be migrated again.
 
 ## Deploy with Traefik
 
@@ -197,6 +261,7 @@ services:
       TransferCs__PurgeDays: 14
       TransferCs__MaxUploadSizeKb: 10485760  # 10 GB
       TransferCs__BaseUrl: https://transfer.example.com
+      TransferCs__TrustedProxies: 172.16.0.0/12
     labels:
       traefik.enable: "true"
       traefik.http.routers.transfer.rule: Host(`transfer.example.com`)
@@ -234,6 +299,11 @@ Without these timeouts, Traefik will kill connections during large transfers (de
 ### Important: Custom headers
 
 transfer.cs uses custom request/response headers (`Token`, `Encrypt-Password`, `Expires`, `Max-Downloads`, etc.). Traefik passes these through by default. However, if you use a `headers` middleware with `customRequestHeaders` or `customResponseHeaders`, make sure you don't strip these headers. The `X-Url-Delete` response header is needed for clients to delete uploaded files.
+
+`TrustedProxies` is required for correct client-IP filtering, auth bypass lists, rate
+limiting, and download logging behind a reverse proxy. Prefer the actual Docker network
+CIDR. `*` trusts every source and is only safe when the app cannot be reached except
+through Traefik; otherwise clients can forge `X-Forwarded-For`.
 
 ### Traefik with file provider (non-Docker)
 
