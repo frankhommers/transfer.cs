@@ -32,7 +32,6 @@ public class PurgeBackgroundService : BackgroundService
     while (!stoppingToken.IsCancellationRequested)
       try
       {
-        await Task.Delay(interval, stoppingToken);
         IEnumerable<ResolvedSite> sites = _siteResolver.IsMultiSite
           ? _siteResolver.Sites
           : [_siteResolver.LegacySite];
@@ -49,6 +48,7 @@ public class PurgeBackgroundService : BackgroundService
             _logger.LogError(ex, "Error purging site {SiteId}", site.Id);
           }
         }
+        await Task.Delay(interval, stoppingToken);
       }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
       {
