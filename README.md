@@ -227,7 +227,7 @@ implementation is the local filesystem.
 | `TransferCs__RandomTokenLength` | `10` | Generated token length; must be from 6 through 128 |
 | `TransferCs__DownloadLogEnabled` | `false` | Retain client IP and UTC time for accepted downloads |
 | `TransferCs__DownloadLogMaxEntries` | `50` | Recent download entries retained per file; effective minimum is one when logging is enabled |
-| `TransferCs__ForceHttps` | `false` | Redirect HTTP requests to HTTPS with status 308, except `/health` and `.onion` hosts |
+| `TransferCs__ForceHttps` | `false` | Redirect HTTP requests to HTTPS with status 308, except `/health`, its subpaths, and `.onion` hosts |
 | `TransferCs__RateLimitRequestsPerMinute` | `0` (disabled) | Global fixed-window request limit per client IP |
 | `TransferCs__ClamAvHost` | *(empty)* | ClamAV `host` or `host:port`; the default port is `3310` |
 | `TransferCs__PerformClamAvPrescan` | `false` | Prescan PUT uploads when `ClamAvHost` is also configured |
