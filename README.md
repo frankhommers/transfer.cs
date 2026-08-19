@@ -197,9 +197,9 @@ in the `Admin-Token` header. It is separate from the legacy deletion capability 
 `X-Url-Delete`.
 
 Download IP history is disabled by default. Enable it with
-`TransferCs__DownloadLogEnabled=true`; `DownloadLogMaxEntries` bounds the retained
-entries while the total counter continues increasing. Full client IP addresses are
-stored, so enable this only when your privacy policy and local law permit it.
+`TransferCs__DownloadLogEnabled=true`; `TransferCs__DownloadLogMaxEntries` bounds the
+retained entries while the total counter continues increasing. Full client IP addresses
+are stored, so enable this only when your privacy policy and local law permit it.
 
 ### AI Agent Integration
 
@@ -346,49 +346,32 @@ the migration. Use this ordered runbook before the first multi-site startup:
    docker compose stop transfer-cs
    ```
 
-4. Create and verify a timestamped backup in `./backups`. This fail-fast subshell uses a
-   temporary archive and publishes the final name only after creation, integrity checking,
-   restrictive permissions, and ownership correction all succeed. The one-off container
-   inherits the service's `/data` volume, overrides the application entrypoint, and starts
-   no dependencies:
+4. Create and verify a timestamped backup in `./backups`. The archive is streamed from a
+   one-off container to a host-owned temporary file, then published under its final name
+   only after creation and integrity checking succeed:
 
    ```bash
    (
      set -eu
      mkdir -p ./backups
      BACKUP_FILE="transfer-data-pre-multisite-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-     HOST_UID="$(id -u)"
-     HOST_GID="$(id -g)"
+     PARTIAL="./backups/$BACKUP_FILE.partial"
+     FINAL="./backups/$BACKUP_FILE"
+     test ! -e "$FINAL"
+     rm -f "$PARTIAL"
+     trap 'rm -f "$PARTIAL"' EXIT HUP INT TERM
      docker compose run --rm --no-deps \
-       --user 0:0 \
+       -T \
        --entrypoint /bin/sh \
-       -e "BACKUP_FILE=$BACKUP_FILE" \
-       -e "HOST_UID=$HOST_UID" \
-       -e "HOST_GID=$HOST_GID" \
-       -v "$PWD/backups:/backup" \
        transfer-cs \
-       -c 'set -eu
-   umask 077
-   archive="/backup/$BACKUP_FILE"
-   partial="$archive.partial"
-   test ! -e "$archive"
-   rm -f "$partial"
-   trap "rm -f \"\$partial\"" EXIT HUP INT TERM
-   tar -C /data -czf "$partial" .
-   tar -tzf "$partial" >/dev/null
-   chmod 600 "$partial"
-   chown "$HOST_UID:$HOST_GID" "$partial"
-   mv "$partial" "$archive"
-   trap - EXIT HUP INT TERM'
-     tar -tzf "./backups/$BACKUP_FILE" >/dev/null
-     printf 'Verified backup: %s\n' "./backups/$BACKUP_FILE"
+       -c 'exec tar -C /data -czf - .' > "$PARTIAL"
+     tar -tzf "$PARTIAL" >/dev/null
+     chmod 600 "$PARTIAL"
+     mv "$PARTIAL" "$FINAL"
+     trap - EXIT HUP INT TERM
+     printf 'Verified backup: %s\n' "$FINAL"
    )
    ```
-
-   The backup container runs as root; the numeric `chown` keeps the mode-`0600` archive
-   owned by the invoking account on a native Linux bind mount. Docker Desktop may
-   virtualize bind-mount ownership; verify that the invoking host account can read the
-   archive before continuing.
 
 5. Inspect the root of `/data` without invoking the application entrypoint:
 
@@ -441,14 +424,14 @@ restart the runbook from the root inspection.
 
 The following restore **replaces all active `/data` contents**, including hidden entries.
 Preserve the failed state separately first if it is needed for diagnosis. Set
-`BACKUP_FILE` to the exact verified archive from step 4 and set `RESTORE_CONFIRM` to the
-shown value only when replacement is intended:
+`BACKUP_FILE` to the exact verified archive from step 4. Leave `RESTORE_CONFIRM` empty
+until replacement is intended, then change it to `REPLACE_ACTIVE_DATA`:
 
 ```bash
 (
   set -eu
   BACKUP_FILE='replace-with-verified-backup-filename'
-  RESTORE_CONFIRM='REPLACE_ACTIVE_DATA'
+  RESTORE_CONFIRM=''
   test "$RESTORE_CONFIRM" = 'REPLACE_ACTIVE_DATA'
   case "$BACKUP_FILE" in
     ''|*/*) printf 'BACKUP_FILE must be a filename in ./backups\n' >&2; exit 1 ;;
@@ -457,24 +440,21 @@ shown value only when replacement is intended:
   docker compose stop transfer-cs
   tar -tzf "$BACKUP_DIR/$BACKUP_FILE" >/dev/null
   docker compose run --rm --no-deps \
+    -T \
     --user 0:0 \
     --entrypoint /bin/sh \
-    -e "BACKUP_FILE=$BACKUP_FILE" \
     -e "RESTORE_CONFIRM=$RESTORE_CONFIRM" \
-    -v "$BACKUP_DIR:/backup:ro" \
     transfer-cs \
     -c 'set -eu
 test "$RESTORE_CONFIRM" = "REPLACE_ACTIVE_DATA"
-archive="/backup/$BACKUP_FILE"
-tar -tzf "$archive" >/dev/null
 find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-tar -C /data -xzf "$archive"'
+tar -C /data -xzf -' < "$BACKUP_DIR/$BACKUP_FILE"
 )
 ```
 
-The restore container inherits the service's `/data` volume and uses the backup bind
-mount read-only. The bounded `find` removes every immediate child, including hidden
-entries, without removing the `/data` mount point itself. If restore fails, leave the
+The restore streams the host-owned archive into a root one-off container that inherits
+the service's `/data` volume. The bounded `find` removes every immediate child, including
+hidden entries, without removing the mount point itself. If restore fails, leave the
 service stopped and repeat the guarded restore after resolving the error. After a
 successful restore, inspect `/data` again with the command in step 5 and reclassify its
 root directories before retrying migration. Do not start the application until migration
@@ -487,7 +467,9 @@ code neither reads nor writes the marker; remove it only after verification if d
 
 ## Deploy with Traefik
 
-Traefik is a common reverse proxy for Docker deployments. transfer.cs streams uploads and downloads directly — **do not** use the Traefik `buffering` middleware, as it will buffer the entire request body and timeout on large files.
+Traefik is a common reverse proxy for Docker deployments. Downloads are streamed, while
+PUT uploads are staged in transfer.cs temporary storage. Reverse-proxy buffering adds a
+second full-body buffer and should remain disabled for large transfers.
 
 ### docker-compose.yml
 
@@ -500,6 +482,7 @@ services:
       - transfer-data:/data
     environment:
       TransferCs__PurgeDays: 14
+      TransferCs__PurgeIntervalHours: 24
       TransferCs__MaxUploadSizeKb: 10485760  # 10 GB
       TransferCs__BaseUrl: https://transfer.example.com
       TransferCs__TrustedProxies: 172.16.0.0/12
@@ -508,8 +491,11 @@ services:
       traefik.http.routers.transfer.rule: Host(`transfer.example.com`)
       traefik.http.routers.transfer.entrypoints: websecure
       traefik.http.routers.transfer.tls.certresolver: letsencrypt
+      traefik.docker.network: proxy
       traefik.http.services.transfer.loadbalancer.server.port: "8080"
       traefik.http.services.transfer.loadbalancer.responseForwarding.flushInterval: "100ms"
+    networks:
+      - proxy
     logging:
       driver: "json-file"
       options:
@@ -518,7 +504,14 @@ services:
 
 volumes:
   transfer-data:
+
+networks:
+  proxy:
+    external: true
 ```
+
+The external `proxy` network must also be attached to Traefik. Replace its name and the
+`traefik.docker.network` label together if your proxy network uses another name.
 
 ### Traefik static configuration
 
@@ -530,12 +523,13 @@ entryPoints:
     address: ":443"
     transport:
       respondingTimeouts:
-        readTimeout: 3600s   # 1 hour for large uploads
-        writeTimeout: 3600s  # 1 hour for large downloads
-        idleTimeout: 120s
+        readTimeout: 3600s  # 1 hour to receive a request body
+        writeTimeout: 0s    # unlimited response write time
+        idleTimeout: 180s
 ```
 
-Without these timeouts, Traefik will kill connections during large transfers (default is 60s).
+Traefik's request read timeout defaults to 60 seconds. Increase it enough for the largest
+expected upload; the defaults for write and idle timeouts are `0s` and `180s`.
 
 ### Important: Custom headers
 
@@ -559,17 +553,7 @@ http:
         - websecure
       tls:
         certResolver: letsencrypt
-      middlewares:
-        - transfer-body
       service: transfer
-
-  middlewares:
-    transfer-body:
-      buffering:
-        maxRequestBodyBytes: 10737418240
-        maxResponseBodyBytes: 10737418240
-        memRequestBodyBytes: 10485760
-        memResponseBodyBytes: 10485760
 
   services:
     transfer:
@@ -588,7 +572,9 @@ server {
     server_name transfer.example.com;
 
     client_max_body_size 10G;
+    proxy_http_version 1.1;
     proxy_request_buffering off;
+    proxy_buffering off;
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
 
@@ -596,10 +582,13 @@ server {
         proxy_pass http://transfer-cs:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
 ```
+
+Add the Nginx address or network CIDR to `TransferCs__TrustedProxies`; otherwise forwarded
+client addresses are intentionally ignored.
 
 ## Build
 
@@ -609,14 +598,15 @@ docker build -t transfer-cs .
 
 ## Development
 
-Open the project in JetBrains Rider and use the **Full Stack** run configuration, or start manually:
+Open the project in JetBrains Rider and use the **Full Stack** run configuration, run
+`./start-dev.sh`, or start each process manually:
 
 ```bash
 # Backend (with hot-reload)
 cd backend/src/TransferCs.Api && dotnet watch run
 
 # Frontend (with HMR)
-cd frontend && npm run dev
+cd frontend && bun run dev
 ```
 
 The frontend dev server runs on `:3002` and proxies API requests to the backend on `:5002`.
