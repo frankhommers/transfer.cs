@@ -327,28 +327,87 @@ Every `DataDirectory` must be a case-insensitively unique single directory name 
 symbolic link. This keeps storage at `BasePath/DataDirectory`, so equal tokens on
 different sites remain isolated.
 
-Normal startup never moves data. Before the first multi-site startup, run the explicit
-one-time migration command. It moves existing root-level token directories into the
-`InitialSiteId` data directory, reports the number moved, and exits without starting the
-HTTP server. It writes no marker.
+Normal startup never migrates legacy data. Running the normal multi-site application
+first can initialize the target `DataDirectory`; a non-empty target intentionally blocks
+the migration. Use this ordered runbook before the first multi-site startup:
 
-```bash
-docker compose stop transfer-cs
+1. Update the Compose file and environment to the new image tag and multi-site
+   configuration. Define `Sites`, `InitialSiteId`, and each site's `DataDirectory`, keep
+   the existing volume mounted at `/data`, and do not start the normal application yet.
+2. Pull the configured service image without starting it:
 
-# Back up the volume before this step.
-docker compose run --rm transfer-cs migrate-legacy-data
+   ```bash
+   docker compose pull transfer-cs
+   ```
 
-docker compose up -d transfer-cs
-```
+3. Stop the service so no writes occur during backup or migration:
 
-The command refuses collisions, symlinks, ambiguous non-empty configured site
-directories, missing multi-site configuration, and a second execution after data has
-already moved. Do not start the multi-site server before running the command: a new
-upload would make the target site directory non-empty and intentionally block migration.
+   ```bash
+   docker compose stop transfer-cs
+   ```
 
-If `.multisite-migration-v1` exists because the short-lived automatic migration version
-already migrated this volume, skip the command and start normally. The file is no longer
-read or written and may be removed after verifying the site directories.
+4. Create and verify a timestamped backup in `./backups`. This one-off container inherits
+   the service's `/data` volume, overrides the application entrypoint, and starts no
+   dependencies:
+
+   ```bash
+   mkdir -p ./backups
+   BACKUP_FILE="transfer-data-pre-multisite-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+   docker compose run --rm --no-deps \
+     --entrypoint /bin/sh \
+     -e "BACKUP_FILE=$BACKUP_FILE" \
+     -v "$PWD/backups:/backup" \
+     transfer-cs \
+     -c 'set -eu; umask 077; test ! -e "/backup/$BACKUP_FILE"; tar -C /data -czf "/backup/$BACKUP_FILE" .'
+   test -s "./backups/$BACKUP_FILE"
+   ```
+
+5. Inspect the root of `/data` without invoking the application entrypoint:
+
+   ```bash
+   docker compose run --rm --no-deps --entrypoint /bin/sh transfer-cs -c 'ls -la /data'
+   ```
+
+   The migration moves every root-level directory whose name is not exactly a configured
+   site `DataDirectory` into the `InitialSiteId` site's `DataDirectory`. It does not
+   validate token naming, so directories such as `@eaDir`, `tmp`, and any unrelated
+   directory would also be moved. Root-level files are not moved. After confirming the
+   backup, manually relocate or remove non-token directories that must not be migrated;
+   the command does not delete them automatically.
+6. Run the explicit migration. It reports the number of directories moved and exits
+   without starting the HTTP server:
+
+   ```bash
+   docker compose run --rm --no-deps transfer-cs migrate-legacy-data
+   ```
+
+7. Compare the reported count with the directories identified in step 5, then inspect
+   the configured target `DataDirectory`:
+
+   ```bash
+   INITIAL_SITE_DATA_DIRECTORY='replace-with-configured-data-directory'
+   docker compose run --rm --no-deps \
+     --entrypoint /bin/sh \
+     -e "INITIAL_SITE_DATA_DIRECTORY=$INITIAL_SITE_DATA_DIRECTORY" \
+     transfer-cs \
+     -c 'ls -la "/data/$INITIAL_SITE_DATA_DIRECTORY"'
+   ```
+
+8. Start the service only after the target contents and migration count are correct:
+
+   ```bash
+   docker compose up -d transfer-cs
+   ```
+
+The migration fails closed when multi-site configuration is missing, names conflict by
+case, a configured site directory is a symbolic link, non-directory, or non-empty,
+any symbolic link exists anywhere in a legacy source, or a destination would collide.
+Resolve the condition and inspect the stopped volume before retrying.
+
+Historical exception: `.multisite-migration-v1` is an obsolete marker written only by
+the short-lived automatic-migration version. If that version already migrated the volume,
+verify the site directories and start normally instead of running this migration. Current
+code neither reads nor writes the marker; remove it only after verification if desired.
 
 ## Deploy with Traefik
 
