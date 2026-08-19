@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace TransferCs.Api.Tests.Endpoints;
 
@@ -13,12 +14,15 @@ public class DeleteEndpointsTests : IClassFixture<WebApplicationFactory<Program>
     _client = factory.CreateClient();
   }
 
-  private async Task<(string Url, string DeleteUrl)> UploadFile(string filename, byte[] content)
+  private static async Task<(string Url, string DeleteUrl)> UploadFile(
+    HttpClient client,
+    string filename,
+    byte[] content)
   {
     ByteArrayContent httpContent = new(content);
     httpContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-    HttpResponseMessage response = await _client.PutAsync($"/put/{filename}", httpContent);
+    HttpResponseMessage response = await client.PutAsync($"/put/{filename}", httpContent);
     response.EnsureSuccessStatusCode();
 
     string url = (await response.Content.ReadAsStringAsync()).Trim();
@@ -30,18 +34,22 @@ public class DeleteEndpointsTests : IClassFixture<WebApplicationFactory<Program>
   [Fact]
   public async Task Delete_WithValidToken_Succeeds()
   {
+    await using WebApplicationFactory<Program> factory = new WebApplicationFactory<Program>()
+      .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        services.ConfigureHttpJsonOptions(options => options.SerializerOptions.TypeInfoResolverChain.Clear())));
+    using HttpClient client = factory.CreateClient();
     byte[] originalContent = "Delete me!"u8.ToArray();
-    (string url, string deleteUrl) = await UploadFile("deletable.txt", originalContent);
+    (string url, string deleteUrl) = await UploadFile(client, "deletable.txt", originalContent);
 
     // Delete the file using the deletion URL
     Uri deleteUri = new(deleteUrl);
-    HttpResponseMessage deleteResponse = await _client.DeleteAsync(deleteUri.PathAndQuery);
+    HttpResponseMessage deleteResponse = await client.DeleteAsync(deleteUri.PathAndQuery);
 
     Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
 
     // Verify the file is no longer accessible
     Uri getUri = new(url);
-    HttpResponseMessage getResponse = await _client.GetAsync(getUri.PathAndQuery);
+    HttpResponseMessage getResponse = await client.GetAsync(getUri.PathAndQuery);
     Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
   }
 
@@ -49,7 +57,7 @@ public class DeleteEndpointsTests : IClassFixture<WebApplicationFactory<Program>
   public async Task Delete_WithInvalidToken_Returns404()
   {
     byte[] originalContent = "Can't delete me with wrong token!"u8.ToArray();
-    (string url, _) = await UploadFile("protected.txt", originalContent);
+    (string url, _) = await UploadFile(_client, "protected.txt", originalContent);
 
     // Try to delete with invalid token
     Uri uri = new(url);

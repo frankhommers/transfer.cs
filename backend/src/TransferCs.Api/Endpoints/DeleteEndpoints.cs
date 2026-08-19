@@ -20,6 +20,6 @@ public static class DeleteEndpoints
     if (!await metadataService.DeleteWithDeletionTokenAsync(token, filename, deletionToken, ct))
       return Results.NotFound();
 
-    return Results.Ok("File deleted");
+    return Results.Text("File deleted");
   }
 }

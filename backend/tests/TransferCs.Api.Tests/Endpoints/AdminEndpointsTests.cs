@@ -134,7 +134,7 @@ public class AdminEndpointsTests
   [Fact]
   public async Task AdminDelete_UsesHeaderTokenAndDeletesFile()
   {
-    await using WebApplicationFactory<Program> factory = CreateFactory();
+    await using WebApplicationFactory<Program> factory = CreateFactoryWithoutJsonReflection();
     using HttpClient client = factory.CreateClient();
     string token = UniqueToken("admin-delete");
     using HttpResponseMessage upload = await UploadAsync(client, token, "file.txt");
@@ -296,6 +296,10 @@ public class AdminEndpointsTests
       builder.ConfigureAppConfiguration((_, configuration) =>
         configuration.AddInMemoryCollection(settings)));
   }
+
+  private static WebApplicationFactory<Program> CreateFactoryWithoutJsonReflection() =>
+    CreateFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+      services.ConfigureHttpJsonOptions(options => options.SerializerOptions.TypeInfoResolverChain.Clear())));
 
   private static async Task<HttpResponseMessage> UploadAsync(HttpClient client, string token, string filename,
     int? maxDownloads = null)

@@ -49,6 +49,6 @@ public static class AdminEndpoints
     if (!await metadataService.DeleteForAdminAsync(token, filename, adminToken, ct))
       return Results.NotFound();
 
-    return Results.Ok("File deleted");
+    return Results.Text("File deleted");
   }
 }
