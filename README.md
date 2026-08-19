@@ -346,21 +346,49 @@ the migration. Use this ordered runbook before the first multi-site startup:
    docker compose stop transfer-cs
    ```
 
-4. Create and verify a timestamped backup in `./backups`. This one-off container inherits
-   the service's `/data` volume, overrides the application entrypoint, and starts no
-   dependencies:
+4. Create and verify a timestamped backup in `./backups`. This fail-fast subshell uses a
+   temporary archive and publishes the final name only after creation, integrity checking,
+   restrictive permissions, and ownership correction all succeed. The one-off container
+   inherits the service's `/data` volume, overrides the application entrypoint, and starts
+   no dependencies:
 
    ```bash
-   mkdir -p ./backups
-   BACKUP_FILE="transfer-data-pre-multisite-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-   docker compose run --rm --no-deps \
-     --entrypoint /bin/sh \
-     -e "BACKUP_FILE=$BACKUP_FILE" \
-     -v "$PWD/backups:/backup" \
-     transfer-cs \
-     -c 'set -eu; umask 077; test ! -e "/backup/$BACKUP_FILE"; tar -C /data -czf "/backup/$BACKUP_FILE" .'
-   test -s "./backups/$BACKUP_FILE"
+   (
+     set -eu
+     mkdir -p ./backups
+     BACKUP_FILE="transfer-data-pre-multisite-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+     HOST_UID="$(id -u)"
+     HOST_GID="$(id -g)"
+     docker compose run --rm --no-deps \
+       --user 0:0 \
+       --entrypoint /bin/sh \
+       -e "BACKUP_FILE=$BACKUP_FILE" \
+       -e "HOST_UID=$HOST_UID" \
+       -e "HOST_GID=$HOST_GID" \
+       -v "$PWD/backups:/backup" \
+       transfer-cs \
+       -c 'set -eu
+   umask 077
+   archive="/backup/$BACKUP_FILE"
+   partial="$archive.partial"
+   test ! -e "$archive"
+   rm -f "$partial"
+   trap "rm -f \"\$partial\"" EXIT HUP INT TERM
+   tar -C /data -czf "$partial" .
+   tar -tzf "$partial" >/dev/null
+   chmod 600 "$partial"
+   chown "$HOST_UID:$HOST_GID" "$partial"
+   mv "$partial" "$archive"
+   trap - EXIT HUP INT TERM'
+     tar -tzf "./backups/$BACKUP_FILE" >/dev/null
+     printf 'Verified backup: %s\n' "./backups/$BACKUP_FILE"
+   )
    ```
+
+   The backup container runs as root; the numeric `chown` keeps the mode-`0600` archive
+   owned by the invoking account on a native Linux bind mount. Docker Desktop may
+   virtualize bind-mount ownership; verify that the invoking host account can read the
+   archive before continuing.
 
 5. Inspect the root of `/data` without invoking the application entrypoint:
 
@@ -403,6 +431,54 @@ The migration fails closed when multi-site configuration is missing, names confl
 case, a configured site directory is a symbolic link, non-directory, or non-empty,
 any symbolic link exists anywhere in a legacy source, or a destination would collide.
 Resolve the condition and inspect the stopped volume before retrying.
+
+#### Recovery after a failed migration
+
+If migration partially moves directories or verification fails, keep `transfer-cs`
+stopped. Do not blindly rerun migration against a partially populated target. Either
+reconcile every source and target directory manually, or restore the verified backup and
+restart the runbook from the root inspection.
+
+The following restore **replaces all active `/data` contents**, including hidden entries.
+Preserve the failed state separately first if it is needed for diagnosis. Set
+`BACKUP_FILE` to the exact verified archive from step 4 and set `RESTORE_CONFIRM` to the
+shown value only when replacement is intended:
+
+```bash
+(
+  set -eu
+  BACKUP_FILE='replace-with-verified-backup-filename'
+  RESTORE_CONFIRM='REPLACE_ACTIVE_DATA'
+  test "$RESTORE_CONFIRM" = 'REPLACE_ACTIVE_DATA'
+  case "$BACKUP_FILE" in
+    ''|*/*) printf 'BACKUP_FILE must be a filename in ./backups\n' >&2; exit 1 ;;
+  esac
+  BACKUP_DIR="$PWD/backups"
+  docker compose stop transfer-cs
+  tar -tzf "$BACKUP_DIR/$BACKUP_FILE" >/dev/null
+  docker compose run --rm --no-deps \
+    --user 0:0 \
+    --entrypoint /bin/sh \
+    -e "BACKUP_FILE=$BACKUP_FILE" \
+    -e "RESTORE_CONFIRM=$RESTORE_CONFIRM" \
+    -v "$BACKUP_DIR:/backup:ro" \
+    transfer-cs \
+    -c 'set -eu
+test "$RESTORE_CONFIRM" = "REPLACE_ACTIVE_DATA"
+archive="/backup/$BACKUP_FILE"
+tar -tzf "$archive" >/dev/null
+find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+tar -C /data -xzf "$archive"'
+)
+```
+
+The restore container inherits the service's `/data` volume and uses the backup bind
+mount read-only. The bounded `find` removes every immediate child, including hidden
+entries, without removing the `/data` mount point itself. If restore fails, leave the
+service stopped and repeat the guarded restore after resolving the error. After a
+successful restore, inspect `/data` again with the command in step 5 and reclassify its
+root directories before retrying migration. Do not start the application until migration
+and verification succeed.
 
 Historical exception: `.multisite-migration-v1` is an obsolete marker written only by
 the short-lived automatic-migration version. If that version already migrated the volume,
