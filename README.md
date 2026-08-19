@@ -52,6 +52,11 @@ curl https://transfer.example.com/<token>/hello.txt -o ./hello.txt
 curl -X DELETE https://transfer.example.com/<token>/hello.txt/<deletion-token>
 ```
 
+PUT uploads accept `/{filename}`, `/put/{filename}`, or `/upload/{filename}`. The
+canonical GET and HEAD route is `/{token}/{filename}`. For GET,
+`/get/{token}/{filename}` and `/download/{token}/{filename}` force attachment
+disposition, while `/inline/{token}/{filename}` uses inline disposition.
+
 ### Multiple files
 
 ```bash
@@ -61,6 +66,10 @@ curl -X POST -F "file=@a.txt" -F "file=@b.txt" https://transfer.example.com/
 # Bundle download
 curl "https://transfer.example.com/bundle.zip?files=token1/a.txt,token2/b.txt" -o bundle.zip
 ```
+
+Multipart POST supports the expiry, download-limit, and token headers below. A custom
+token is rejected when the request contains multiple files. Encryption and expected
+checksum validation are not supported for multipart uploads.
 
 ### Archive (tar)
 
@@ -75,6 +84,19 @@ curl https://transfer.example.com/<token>/files.tar.gz | tar xzf -
 tar cf - *.txt | curl --upload-file - https://transfer.example.com/files.tar
 curl https://transfer.example.com/<token>/files.tar | tar xf -
 ```
+
+### Standalone scanning
+
+```bash
+# Scan with ClamAV without storing the file
+curl --upload-file ./hello.txt https://transfer.example.com/hello.txt/scan
+
+# Submit to VirusTotal without storing the file
+curl --upload-file ./hello.txt https://transfer.example.com/hello.txt/virustotal
+```
+
+`PUT /{filename}/scan` uses ClamAV and `PUT /{filename}/virustotal` uses VirusTotal.
+Each endpoint scans the request body without creating a stored upload.
 
 ### Encryption
 
@@ -93,33 +115,38 @@ cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Passw
 
 ### Request Headers
 
-| Header | Description | Example |
-|--------|-------------|---------|
-| `Expires` | Expiry duration or date | `7d`, `12h30m`, `2026-04-15T00:00:00Z` |
-| `Max-Downloads` | Download limit | `1`, `5`, `100` |
-| `Encrypt-Password` | Server-side encryption password | any string |
-| `Token` | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
-| `Expected-Checksum` | Reject the upload unless it hashes to this SHA-256 | `sha256:9f86d081...` |
-
-> **Note:** `X-Encrypt-Password`, `X-Decrypt-Password`, `X-Token`, and `X-Expected-Checksum` are also accepted for backward compatibility.
+| Header | Scope | Description | Example |
+|--------|-------|-------------|---------|
+| `Expires` | PUT, multipart POST | Expiry duration or date | `7d`, `12h30m`, `2026-04-15T00:00:00Z` |
+| `Max-Days` | PUT, multipart POST | Legacy expiry in days | `7` |
+| `Max-Downloads` | PUT, multipart POST | Download limit | `1`, `5`, `100` |
+| `Token` / `X-Token` | PUT, multipart POST | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
+| `Encrypt-Password` / `X-Encrypt-Password` | PUT | Server-side encryption password | any string |
+| `Expected-Checksum` / `X-Expected-Checksum` | PUT | Reject unless the body matches this SHA-256 | `sha256:9f86d081...` |
+| `Decrypt-Password` / `X-Decrypt-Password` | GET | Decrypt an encrypted download | any string |
+| `Admin-Token` | Admin API | Authorize access to a file's admin API | capability token |
 
 ### Response Headers
 
-| Header | Description |
-|--------|---------|
-| `X-Url-Delete` | URL to delete the uploaded file |
-| `X-Url-Admin` | Private admin URL; its capability token is kept in the URL fragment |
-| `Expires` | Expiry date of the upload |
-| `Checksum` | `sha256:<hex>` of the file as received (also sent as `X-Checksum`) |
-| `X-Remaining-Downloads` | Remaining download count |
-| `X-Remaining-Days` | Remaining days until expiry |
+| Header | Response scope | Description |
+|--------|----------------|-------------|
+| `X-Url-Delete` | PUT | URL to delete the uploaded file |
+| `X-Url-Admin` | PUT, single-file multipart POST | Private admin URL with its capability token in the fragment |
+| `Expires` | PUT when expiry is set; HEAD for an expiring file | Expiry date |
+| `Checksum` / `X-Checksum` | PUT; single-file multipart POST; unencrypted GET/HEAD; decrypted GET | `sha256:<hex>` of the file as received |
+| `X-Remaining-Downloads` | GET, HEAD | Remaining download count |
+| `X-Remaining-Days` | GET, HEAD | Remaining days until expiry |
+
+A single-file multipart response has no deletion URL. A multi-file multipart response
+contains only newline-separated download URLs, with no per-file admin, deletion, or
+checksum headers.
 
 ### Checksums
 
-Every upload response carries a `Checksum` header with the SHA-256 of the bytes the
-server received. For server-side encrypted uploads this is the digest of the
-*plaintext*, so it matches what you compute locally — the stored ciphertext is not
-byte-reproducible.
+Successful PUT and single-file multipart POST responses carry a `Checksum` header with the
+SHA-256 of the bytes the server received. For server-side encrypted PUT uploads this is
+the digest of the *plaintext*, so it matches what you compute locally; the stored
+ciphertext is not byte-reproducible.
 
 ```bash
 # Show the checksum of an upload
@@ -133,7 +160,8 @@ curl --upload-file ./hello.txt \
 
 A mismatch returns `400` and nothing is stored. `Expected-Checksum` accepts a bare
 64-character hex digest too, so you can paste `sha256sum` output directly. It is
-supported on `PUT` uploads; multipart `POST` only reports checksums.
+supported only on PUT uploads. Single-file multipart POST reports a checksum; multi-file
+multipart POST does not expose per-file checksum headers.
 
 The download response carries the same `Checksum` header, except for encrypted files —
 there the plaintext digest is only sent when you supply `Decrypt-Password`, so a link
@@ -156,11 +184,13 @@ transfer ./big.iso --verify
 
 ### Private file administration
 
-Every new upload returns an `X-Url-Admin` header. Keep this URL private: it opens a
-non-discoverable page with file metadata, the checksum, download counters, optional IP
-history, and permanent deletion. The admin capability is stored after `#` and is never
-sent in a URL, query string, referrer, or proxy access log. It is separate from the
-legacy deletion capability in `X-Url-Delete`.
+Successful PUT and single-file multipart POST responses return an `X-Url-Admin` header. Keep
+this URL private: the admin route is capability-protected and provides file metadata,
+the checksum, download counters, optional IP history, and permanent deletion. The
+capability follows `#`, so it is not sent in the HTTP request target or referrer. The UI
+stores it in `sessionStorage`, removes it from the address bar, and sends it to the API
+in the `Admin-Token` header. It is separate from the legacy deletion capability in
+`X-Url-Delete`.
 
 Download IP history is disabled by default. Enable it with
 `TransferCs__DownloadLogEnabled=true`; `DownloadLogMaxEntries` bounds the retained
