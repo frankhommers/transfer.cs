@@ -27,6 +27,7 @@ docker run -d \
   -p 8080:8080 \
   -v transfer-data:/data \
   -e TransferCs__PurgeDays=14 \
+  -e TransferCs__PurgeIntervalHours=24 \
   -e TransferCs__MaxUploadSizeKb=1048576 \
   ghcr.io/frankhommers/transfer.cs:main
 ```
@@ -211,26 +212,68 @@ curl https://transfer.example.com/SKILL.md
 
 ## Configuration
 
-All settings are configured via environment variables with the `TransferCs__` prefix:
+Settings use the `TransferCs__` environment-variable prefix. The current storage
+implementation is the local filesystem.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TransferCs__Title` | `transfer.cs` | Instance title shown in UI |
-| `TransferCs__BaseUrl` | *(auto-detect)* | Override base URL (e.g. `https://transfer.example.com`) |
-| `TransferCs__BasePath` | `./data` | Storage directory |
-| `TransferCs__PurgeDays` | `0` (disabled) | Auto-delete files after N days |
-| `TransferCs__PurgeIntervalHours` | `0` (disabled) | How often to run purge |
-| `TransferCs__MaxUploadSizeKb` | `0` (unlimited) | Max upload size in KB |
-| `TransferCs__RandomTokenLength` | `10` | Length of generated tokens |
-| `TransferCs__DownloadLogEnabled` | `false` | Store client IP and UTC time for accepted GET downloads |
-| `TransferCs__DownloadLogMaxEntries` | `50` | Maximum recent IP log entries retained per file |
-| `TransferCs__ForceHttps` | `false` | Redirect HTTP to HTTPS |
-| `TransferCs__RateLimitRequestsPerMinute` | `0` (disabled) | Rate limit per IP |
-| `TransferCs__TrustedProxies` | *(empty)* | Proxy IPs/CIDRs trusted for `X-Forwarded-*`; use `*` only when direct access is impossible |
-| `TransferCs__ClamAvHost` | *(empty)* | ClamAV host for virus scanning |
-| `TransferCs__PerformClamAvPrescan` | `false` | Scan uploads before storing |
-| `TransferCs__VirusTotalKey` | *(empty)* | VirusTotal API key |
-| `TransferCs__CorsDomains` | *(empty)* | Comma-separated CORS origins |
+| `TransferCs__Title` | `transfer.cs` | Instance title shown in the UI |
+| `TransferCs__BaseUrl` | *(request URL)* | Absolute public base URL used in generated links; when empty, derive it from the request |
+| `TransferCs__BasePath` | `./data` app; `/data` container | Local payload and metadata directory |
+| `TransferCs__TempPath` | System temp; `/tmp` container | Directory used to stage PUT and standalone scan request bodies |
+| `TransferCs__PurgeDays` | `0` (disabled) | Default upload expiry in days and physical file-age threshold |
+| `TransferCs__PurgeIntervalHours` | `0` (disabled) | Global interval for physical purge runs |
+| `TransferCs__MaxUploadSizeKb` | `0` (unlimited) | Upload size limit in KB |
+| `TransferCs__RandomTokenLength` | `10` | Generated token length; must be from 6 through 128 |
+| `TransferCs__DownloadLogEnabled` | `false` | Retain client IP and UTC time for accepted downloads |
+| `TransferCs__DownloadLogMaxEntries` | `50` | Recent download entries retained per file; effective minimum is one when logging is enabled |
+| `TransferCs__ForceHttps` | `false` | Redirect HTTP requests to HTTPS with status 308, except `/health` and `.onion` hosts |
+| `TransferCs__RateLimitRequestsPerMinute` | `0` (disabled) | Global fixed-window request limit per client IP |
+| `TransferCs__ClamAvHost` | *(empty)* | ClamAV `host` or `host:port`; the default port is `3310` |
+| `TransferCs__PerformClamAvPrescan` | `false` | Prescan PUT uploads when `ClamAvHost` is also configured |
+| `TransferCs__VirusTotalKey` | *(empty)* | API key for the standalone VirusTotal scan endpoint |
+| `TransferCs__HttpAuthUser` | *(empty)* | Optional basic-auth username for upload and legacy deletion methods |
+| `TransferCs__HttpAuthPass` | *(empty)* | Password paired with `HttpAuthUser` |
+| `TransferCs__HttpAuthHtpasswd` | *(empty)* | Optional path to an htpasswd-style credentials file |
+| `TransferCs__HttpAuthIpWhitelist` | *(empty)* | Client IPs/CIDRs that bypass optional basic auth |
+| `TransferCs__IpWhitelist` | *(empty)* | When set, reject every client outside these IPs/CIDRs |
+| `TransferCs__IpBlacklist` | *(empty)* | Reject clients in these IPs/CIDRs |
+| `TransferCs__CorsDomains` | *(empty)* | Comma-separated allowed CORS origins |
+| `TransferCs__ProxyPath` | *(empty)* | Public path prefix added to generated links when `BaseUrl` is empty |
+| `TransferCs__ProxyPort` | *(request port)* | Public port used in generated links when `BaseUrl` is empty |
+| `TransferCs__TrustedProxies` | *(empty)* | Proxy IPs/CIDRs allowed to supply `X-Forwarded-For`, `-Host`, and `-Proto` |
+| `TransferCs__InitialSiteId` | *(empty)* | Exact configured site ID used as the legacy-data migration target; required with `Sites` |
+| `TransferCs__Sites` | *(empty)* | Site-ID-keyed definitions; see below |
+
+`PurgeDays` is used as an upload's logical expiry when neither a valid `Expires`
+header nor a positive `Max-Days` header supplies one. Logical expiry blocks downloads.
+Separately, a positive `PurgeIntervalHours` runs physical cleanup immediately at startup
+and then every N hours; zero disables physical deletion. Physical cleanup removes payloads
+whose filesystem `CreationTimeUtc` is older than that site's `PurgeDays`. It does not use
+an upload's `MaxDate`/`Expires` value, so logical and physical expiry can occur at different
+times.
+
+For PUT, `MaxUploadSizeKb` limits the request payload/file. For multipart POST, it is
+checked for each file, while Kestrel's request-body limit still applies to the complete
+multipart request. In multi-site mode Kestrel uses the largest effective finite site
+limit; if any site is unlimited, its global request-body limit is unlimited. The selected
+site's per-file limit is still enforced by the application. ClamAV prescan applies only
+to PUT uploads and only when `PerformClamAvPrescan=true` and `ClamAvHost` is set;
+multipart uploads are not prescanned.
+
+Basic auth, when configured, protects PUT, multipart POST, and the legacy DELETE route.
+Basic auth does not protect GET or HEAD, so downloads remain public. The admin API
+bypasses basic auth and instead requires the per-file `Admin-Token`. A configured
+username/password or a matching entry in `HttpAuthHtpasswd` is accepted; the file reader
+supports only plaintext passwords and `{SHA}` SHA-1/base64 entries.
+
+`HttpAuthIpWhitelist`, `IpWhitelist`, and `IpBlacklist` accept comma-separated individual
+IPv4/IPv6 addresses and CIDR ranges. The first only bypasses basic auth; the application
+whitelist and blacklist apply to all routes. `TrustedProxies` accepts the same formats
+and controls which direct proxy sources may set the forwarded client IP, host, and scheme
+used by IP controls, rate limiting, download logs, HTTPS handling, and site selection.
+Use `*` only when the application cannot be reached directly, because it allows any
+source to supply forwarded values.
 
 ### Multi-site configuration
 
@@ -243,6 +286,7 @@ at a reverse proxy.
 {
   "TransferCs": {
     "BasePath": "/data",
+    "PurgeIntervalHours": 24,
     "InitialSiteId": "public",
     "Sites": {
       "public": {
@@ -266,10 +310,21 @@ at a reverse proxy.
 }
 ```
 
-All site fields except `Hosts` are overrides. `DataDirectory` defaults to the site ID.
-Storage is rooted at `BasePath/DataDirectory`, and equal tokens on different hosts remain
-fully isolated. Site IDs use lowercase letters, numbers, and hyphens; hosts are exact
-matches without wildcards.
+Each site requires at least one `Hosts` entry and may override only `Title`, `BaseUrl`,
+`PurgeDays`, `MaxUploadSizeKb`, and `RandomTokenLength`. `DataDirectory` defaults to the
+site ID. Other settings, including `PurgeIntervalHours`, authentication, IP controls,
+scanning, and temporary storage, remain global.
+
+Host matching is an exact, case-insensitive match after surrounding whitespace and a
+trailing dot are ignored; wildcards are not supported. Site IDs are case-sensitive,
+1-63 characters, use only lowercase letters, numbers, and hyphens, and must start and end
+with a letter or number. `InitialSiteId` is required whenever `Sites` is non-empty and
+must exactly identify one configured site.
+
+Every `DataDirectory` must be a case-insensitively unique single directory name beneath
+`BasePath`; it cannot be `.` or `..`, resolve outside `BasePath`, or be an existing
+symbolic link. This keeps storage at `BasePath/DataDirectory`, so equal tokens on
+different sites remain isolated.
 
 Normal startup never moves data. Before the first multi-site startup, run the explicit
 one-time migration command. It moves existing root-level token directories into the
