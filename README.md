@@ -52,10 +52,11 @@ curl https://transfer.example.com/<token>/hello.txt -o ./hello.txt
 curl -X DELETE https://transfer.example.com/<token>/hello.txt/<deletion-token>
 ```
 
-PUT uploads accept `/{filename}`, `/put/{filename}`, or `/upload/{filename}`. The
-canonical GET and HEAD route is `/{token}/{filename}`. For GET,
-`/get/{token}/{filename}` and `/download/{token}/{filename}` force attachment
-disposition, while `/inline/{token}/{filename}` uses inline disposition.
+PUT uploads accept `/{filename}`, `/put/{filename}`, or `/upload/{filename}`. GET and
+HEAD support canonical `/{token}/{filename}` plus `/get/{token}/{filename}`,
+`/download/{token}/{filename}`, and `/inline/{token}/{filename}`. GET uses attachment
+disposition for the canonical, `get`, and `download` routes, while `inline` uses inline
+disposition. HEAD always reports attachment disposition, including on the `inline` route.
 
 ### Multiple files
 
@@ -158,10 +159,11 @@ curl --upload-file ./hello.txt \
   https://transfer.example.com/hello.txt
 ```
 
-A mismatch returns `400` and nothing is stored. `Expected-Checksum` accepts a bare
-64-character hex digest too, so you can paste `sha256sum` output directly. It is
-supported only on PUT uploads. Single-file multipart POST reports a checksum; multi-file
-multipart POST does not expose per-file checksum headers.
+A mismatch returns `400` and nothing is stored. `Expected-Checksum` accepts only a bare
+64-character hexadecimal digest or `sha256:<digest>`; do not include the filename from a
+full `sha256sum` output line. It is supported only on PUT uploads. Single-file multipart
+POST reports a checksum; multi-file multipart POST does not expose per-file checksum
+headers.
 
 The download response carries the same `Checksum` header, except for encrypted files —
 there the plaintext digest is only sent when you supply `Decrypt-Password`, so a link
