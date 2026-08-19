@@ -159,11 +159,12 @@ curl --upload-file ./hello.txt \
   https://transfer.example.com/hello.txt
 ```
 
-A mismatch returns `400` and nothing is stored. `Expected-Checksum` accepts only a bare
-64-character hexadecimal digest or `sha256:<digest>`; do not include the filename from a
-full `sha256sum` output line. It is supported only on PUT uploads. Single-file multipart
-POST reports a checksum; multi-file multipart POST does not expose per-file checksum
-headers.
+A mismatch returns `400` and nothing is stored. `Expected-Checksum` accepts a bare
+64-character hexadecimal digest or the canonical `sha256:<digest>`. Algorithm names are
+case-insensitive; `sha-256` and `=` separators are also accepted. Do not include the
+filename from a full `sha256sum` output line. It is supported only on PUT uploads.
+Single-file multipart POST reports a checksum; multi-file multipart POST does not expose
+per-file checksum headers.
 
 The download response carries the same `Checksum` header, except for encrypted files —
 there the plaintext digest is only sent when you supply `Decrypt-Password`, so a link
