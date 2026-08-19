@@ -310,10 +310,11 @@ at a reverse proxy.
 }
 ```
 
-Each site requires at least one `Hosts` entry and may override only `Title`, `BaseUrl`,
-`PurgeDays`, `MaxUploadSizeKb`, and `RandomTokenLength`. `DataDirectory` defaults to the
-site ID. Other settings, including `PurgeIntervalHours`, authentication, IP controls,
-scanning, and temporary storage, remain global.
+Each site requires at least one `Hosts` entry. `DataDirectory` is site-specific and
+defaults to the site ID. `Title`, `BaseUrl`, `PurgeDays`, `MaxUploadSizeKb`, and
+`RandomTokenLength` may override global defaults. Other settings, including
+`PurgeIntervalHours`, authentication, IP controls, scanning, and temporary storage,
+remain global.
 
 Host matching is an exact, case-insensitive match after surrounding whitespace and a
 trailing dot are ignored; wildcards are not supported. Site IDs are case-sensitive,
