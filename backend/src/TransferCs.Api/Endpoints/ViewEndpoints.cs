@@ -8,16 +8,20 @@ public static class ViewEndpoints
   public static WebApplication MapViewEndpoints(this WebApplication app)
   {
     app.MapGet("/", HandleRoot);
+    app.MapMethods("/admin/{token}/{filename}", ["GET", "HEAD"], HandleApplication);
     return app;
+  }
+
+  private static IResult HandleApplication(IWebHostEnvironment env)
+  {
+    string webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+    return Results.File(Path.Combine(webRoot, "index.html"), "text/html");
   }
 
   private static IResult HandleRoot(HttpRequest request, IWebHostEnvironment env, SiteContext siteContext)
   {
     if (AcceptHelper.AcceptsHtml(request))
-    {
-      string indexPath = Path.Combine(env.WebRootPath ?? "wwwroot", "index.html");
-      return Results.File(indexPath, "text/html");
-    }
+      return HandleApplication(env);
 
     string title = siteContext.Site.Options.Title;
     string baseUrl = UrlHelper.ResolveUrl(request, "", siteContext.Site.Options).TrimEnd('/');
