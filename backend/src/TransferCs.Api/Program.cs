@@ -7,6 +7,7 @@ using TransferCs.Api.Configuration;
 using TransferCs.Api.Endpoints;
 using TransferCs.Api.Helpers;
 using TransferCs.Api.Middleware;
+using TransferCs.Api.Models;
 using TransferCs.Api.Services;
 using TransferCs.Api.Storage;
 
@@ -29,6 +30,8 @@ builder.Services.AddOptions<ForwardedHeadersOptions>()
     ForwardedHeadersSetup.Configure(options, transferOptions.Value.TrustedProxies));
 
 // Services
+builder.Services.ConfigureHttpJsonOptions(options =>
+  options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.AddSingleton<SiteResolver>();
 builder.Services.AddSingleton<SiteStorageFactory>();
 builder.Services.AddSingleton<SiteDataMigration>();

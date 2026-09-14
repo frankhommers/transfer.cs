@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,13 @@ public class HttpHeaderContractTests : IClassFixture<WebApplicationFactory<Progr
 
   public HttpHeaderContractTests(WebApplicationFactory<Program> factory)
   {
-    _client = factory.CreateClient();
+    _client = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+      services.PostConfigure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+      {
+        foreach (IJsonTypeInfoResolver resolver in options.SerializerOptions.TypeInfoResolverChain.ToArray())
+          if (resolver is DefaultJsonTypeInfoResolver)
+            options.SerializerOptions.TypeInfoResolverChain.Remove(resolver);
+      }))).CreateClient();
   }
 
   [Fact]
