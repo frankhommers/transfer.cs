@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using TransferCs.Api.Configuration;
@@ -54,21 +55,23 @@ if (config.RateLimitRequestsPerMinute > 0)
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
   });
 
-// CORS (conditional)
-if (!string.IsNullOrEmpty(config.CorsDomains))
-{
-  string[] origins =
-    config.CorsDomains.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-  builder.Services.AddCors(options =>
+builder.Services.AddCors();
+builder.Services.AddOptions<CorsOptions>()
+  .Configure<IOptions<TransferCsOptions>>((options, transferOptions) =>
   {
+    string[] origins = transferOptions.Value.CorsDomains.Split(',',
+      StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (origins.Length == 0)
+      return;
+
     options.AddDefaultPolicy(policy =>
     {
       policy.WithOrigins(origins)
         .AllowAnyMethod()
-        .AllowAnyHeader();
+        .AllowAnyHeader()
+        .WithExposedHeaders("Location", "Link", "Repr-Digest", "Sunset", "X-Remaining-Downloads");
     });
   });
-}
 
 // Kestrel limits for large file uploads
 builder.WebHost.ConfigureKestrel(options =>
@@ -94,8 +97,7 @@ app.UseMiddleware<AdminSecurityHeadersMiddleware>();
 app.UseMiddleware<IpFilterMiddleware>();
 app.UseMiddleware<ForceHttpsMiddleware>();
 
-if (!string.IsNullOrEmpty(config.CorsDomains))
-  app.UseCors();
+app.UseCors();
 
 if (config.RateLimitRequestsPerMinute > 0)
   app.UseRateLimiter();

@@ -47,70 +47,11 @@ public static class ChecksumHelper
   }
 
   /// <summary>
-  /// Formats a hex digest as a Checksum header value.
-  /// </summary>
-  public static string Format(string sha256Hex)
-  {
-    return $"sha256:{sha256Hex}";
-  }
-
-  /// <summary>
-  /// Parses an Expected-Checksum header value.
-  ///
-  /// Accepts:
-  ///   - "sha256:&lt;64 hex chars&gt;" (also "sha-256:", "sha256=", case-insensitive)
-  ///   - a bare 64-character hex digest (as produced by sha256sum / shasum -a 256)
-  ///
-  /// Returns false with an error message when the value is malformed or uses an
-  /// unsupported algorithm.
-  /// </summary>
-  public static bool TryParseExpected(string value, out string hex, out string error)
-  {
-    hex = "";
-    error = "";
-
-    string trimmed = value.Trim();
-
-    // Strip an optional "<algorithm>:" or "<algorithm>=" prefix
-    int separator = trimmed.IndexOfAny([':', '=']);
-    if (separator >= 0)
-    {
-      string algorithm = trimmed[..separator].Trim().Replace("-", "");
-      if (!algorithm.Equals("sha256", StringComparison.OrdinalIgnoreCase))
-      {
-        error = $"Unsupported checksum algorithm '{trimmed[..separator].Trim()}'. Only sha256 is supported.";
-        return false;
-      }
-
-      trimmed = trimmed[(separator + 1)..].Trim();
-    }
-
-    if (trimmed.Length != 64 || !IsHex(trimmed))
-    {
-      error = "Invalid checksum. Expected a 64-character hex SHA-256 digest, " +
-              "optionally prefixed with 'sha256:'.";
-      return false;
-    }
-
-    hex = trimmed.ToLowerInvariant();
-    return true;
-  }
-
-  /// <summary>
   /// Compares two hex digests case-insensitively.
   /// </summary>
   public static bool Matches(string expectedHex, string actualHex)
   {
     return string.Equals(expectedHex, actualHex, StringComparison.OrdinalIgnoreCase);
-  }
-
-  private static bool IsHex(string value)
-  {
-    foreach (char c in value)
-      if (!char.IsAsciiHexDigit(c))
-        return false;
-
-    return true;
   }
 
   /// <summary>

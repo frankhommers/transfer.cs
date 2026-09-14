@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Mvc.Testing;
+using TransferCs.Api.Tests.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace TransferCs.Api.Tests.Endpoints;
@@ -26,7 +27,7 @@ public class DeleteEndpointsTests : IClassFixture<WebApplicationFactory<Program>
     response.EnsureSuccessStatusCode();
 
     string url = (await response.Content.ReadAsStringAsync()).Trim();
-    string deleteUrl = response.Headers.GetValues("X-Url-Delete").First();
+    string deleteUrl = UploadResponseHeaders.DeleteUrl(response);
 
     return (url, deleteUrl);
   }

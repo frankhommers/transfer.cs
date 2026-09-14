@@ -19,7 +19,7 @@ interface HeaderOption {
 }
 
 const headerOptions: HeaderOption[] = [
-  {key: 'expires', label: 'Expires', icon: mdiClockOutline, header: 'Expires', placeholder: '7d', type: 'text'},
+  {key: 'expires', label: 'Expires', icon: mdiClockOutline, header: 'File-Lifetime', placeholder: '7d', type: 'text'},
   {key: 'maxDownloads', label: 'Max downloads', icon: mdiDownload, header: 'Max-Downloads', placeholder: '1', type: 'number'},
   {key: 'serverEncrypt', label: 'Server encrypt', icon: mdiLock, header: 'Encrypt-Password', placeholder: 'password', type: 'text'},
   {key: 'customToken', label: 'Custom token', icon: mdiTagText, header: 'Token', placeholder: 'my-slug', type: 'text'},

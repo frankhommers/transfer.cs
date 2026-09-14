@@ -31,12 +31,12 @@ public static class ViewEndpoints
 
                     Options:
                       Max-Downloads: 1              Maximum number of downloads
-                      Expires: 7d                   Expires in 7 days (supports: 1d12h, 30m, 3600s, or a date)
+                      File-Lifetime: 7d                   Expires in 7 days (supports: 1d12h, 30m, 3600s, or a date)
 
                     Examples:
                       curl --upload-file ./hello.txt {baseUrl}/hello.txt
-                      curl -H "Expires: 7d" --upload-file ./hello.txt {baseUrl}/hello.txt
-                      curl -H "Expires: 1d12h" --upload-file ./hello.txt {baseUrl}/hello.txt
+                      curl -H "File-Lifetime: 7d" --upload-file ./hello.txt {baseUrl}/hello.txt
+                      curl -H "File-Lifetime: 1d12h" --upload-file ./hello.txt {baseUrl}/hello.txt
                       curl -H "Max-Downloads: 1" --upload-file ./hello.txt {baseUrl}/hello.txt
                     """;
 

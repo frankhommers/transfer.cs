@@ -13,7 +13,7 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
     },
     {
       title: 'Upload with expiry and download limit',
-      code: `curl -H "Max-Downloads: 1" -H "Expires: 5d" --upload-file ./hello.txt ${baseUrl}/hello.txt`,
+      code: `curl -H "Max-Downloads: 1" -H "File-Lifetime: 5d" --upload-file ./hello.txt ${baseUrl}/hello.txt`,
     },
     {
       title: 'Upload with custom token',

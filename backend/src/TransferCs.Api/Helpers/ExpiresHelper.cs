@@ -6,7 +6,7 @@ namespace TransferCs.Api.Helpers;
 public static partial class ExpiresHelper
 {
   /// <summary>
-  /// Parses an Expires header value into an absolute UTC DateTime.
+  /// Parses a File-Lifetime header value into an absolute UTC DateTime.
   /// 
   /// Accepts:
   ///   - Duration: "7d", "12h", "30m", "90s", "7d12h", "1d6h30m", "3600s"
@@ -26,21 +26,32 @@ public static partial class ExpiresHelper
     Match match = DurationRegex().Match(value);
     if (match.Success && match.Length == value.Length)
     {
-      TimeSpan duration = TimeSpan.Zero;
+      try
+      {
+        TimeSpan duration = TimeSpan.Zero;
 
-      if (match.Groups["days"].Success)
-        duration += TimeSpan.FromDays(int.Parse(match.Groups["days"].Value));
-      if (match.Groups["hours"].Success)
-        duration += TimeSpan.FromHours(int.Parse(match.Groups["hours"].Value));
-      if (match.Groups["minutes"].Success)
-        duration += TimeSpan.FromMinutes(int.Parse(match.Groups["minutes"].Value));
-      if (match.Groups["seconds"].Success)
-        duration += TimeSpan.FromSeconds(int.Parse(match.Groups["seconds"].Value));
+        if (match.Groups["days"].Success)
+          duration += TimeSpan.FromDays(int.Parse(match.Groups["days"].Value));
+        if (match.Groups["hours"].Success)
+          duration += TimeSpan.FromHours(int.Parse(match.Groups["hours"].Value));
+        if (match.Groups["minutes"].Success)
+          duration += TimeSpan.FromMinutes(int.Parse(match.Groups["minutes"].Value));
+        if (match.Groups["seconds"].Success)
+          duration += TimeSpan.FromSeconds(int.Parse(match.Groups["seconds"].Value));
 
-      if (duration <= TimeSpan.Zero)
+        if (duration <= TimeSpan.Zero)
+          return null;
+
+        return DateTime.UtcNow + duration;
+      }
+      catch (OverflowException)
+      {
         return null;
-
-      return DateTime.UtcNow + duration;
+      }
+      catch (ArgumentOutOfRangeException)
+      {
+        return null;
+      }
     }
 
     // Try HTTP date (RFC 7231): "Thu, 15 Apr 2026 07:38:01 GMT"
@@ -55,7 +66,7 @@ public static partial class ExpiresHelper
   }
 
   /// <summary>
-  /// Formats a UTC DateTime as an RFC 7231 HTTP date for the Expires response header.
+  /// Formats a UTC DateTime as an RFC 7231 HTTP date for the Sunset response header.
   /// </summary>
   public static string FormatHttpDate(DateTime utcDate)
   {

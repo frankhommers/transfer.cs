@@ -10,4 +10,5 @@ namespace TransferCs.Api.Models;
 [JsonSerializable(typeof(PublicConfig))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(AdminMetadata))]
+[JsonSerializable(typeof(UploadResponse))]
 public partial class AppJsonContext : JsonSerializerContext;

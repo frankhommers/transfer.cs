@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.AspNetCore.Mvc.Testing;
+using TransferCs.Api.Tests.Helpers;
 
 namespace TransferCs.Api.Tests.Endpoints;
 
@@ -22,12 +23,11 @@ public class UploadEndpointsTests : IClassFixture<WebApplicationFactory<Program>
 
     HttpResponseMessage response = await _client.PutAsync("/put/test.txt", content);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     string body = await response.Content.ReadAsStringAsync();
     Assert.Contains("/test.txt", body);
 
-    // Should have X-Url-Delete header
-    Assert.True(response.Headers.Contains("X-Url-Delete"));
+    Assert.NotEmpty(UploadResponseHeaders.DeleteUrl(response));
   }
 
   [Fact]
@@ -52,7 +52,7 @@ public class UploadEndpointsTests : IClassFixture<WebApplicationFactory<Program>
 
     HttpResponseMessage response = await _client.PostAsync("/", multipartContent);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     string body = await response.Content.ReadAsStringAsync();
     Assert.Contains("/upload.txt", body);
   }
@@ -68,7 +68,7 @@ public class UploadEndpointsTests : IClassFixture<WebApplicationFactory<Program>
       _client.SendAsync(first),
       _client.SendAsync(second));
 
-    Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
+    Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
     Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
     foreach (HttpResponseMessage response in responses)
       response.Dispose();

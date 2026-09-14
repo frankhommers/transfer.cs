@@ -26,7 +26,7 @@ public class BasicAuthMiddleware
 
   public async Task InvokeAsync(HttpContext context)
   {
-    // Admin endpoints authenticate with the per-file Admin-Token header. Requiring global
+    // Admin endpoints authenticate with the per-file Authorization: Bearer token. Requiring global
     // basic auth as well would turn a missing admin token into 401 instead of the intended
     // non-enumerable 404 response.
     if (context.Request.Path.StartsWithSegments("/api/admin"))

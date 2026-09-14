@@ -10,6 +10,7 @@ public static class MimeHelper
   {
     Provider = new FileExtensionContentTypeProvider();
     Provider.Mappings[".md"] = "text/x-markdown";
+    Provider.Mappings[".zip"] = "application/zip";
   }
 
   public static string GetMimeType(string filename)

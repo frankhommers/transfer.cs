@@ -1,9 +1,13 @@
-import {useState, useCallback} from 'react'
+import {useState, useCallback, useRef} from 'react'
 import {useDropzone} from 'react-dropzone'
-import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound} from 'lucide-react'
+import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw} from 'lucide-react'
 import {Progress} from '@/components/ui/progress'
+import {Button} from '@/components/ui/button'
+import {cn} from '@/lib/utils'
 
 interface UploadResult {
+  id: string
+  files: File[]
   filename: string
   url: string
   deleteUrl: string
@@ -11,13 +15,13 @@ interface UploadResult {
   expires: string | null
   checksum: string
   failed: boolean
+  error?: string
+  retrying?: boolean
 }
 
-interface FileProgress {
-  filename: string
+interface UploadProgress {
   loaded: number
   total: number
-  done: boolean
 }
 
 function formatExpiry(expires: string): string {
@@ -41,10 +45,9 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
 }
 
-// Paste-ready verification command. Two spaces between digest and filename is what
-// shasum/sha256sum -c expects for binary mode.
 function verifyCommand(result: {checksum: string; filename: string}): string {
-  return `echo "${result.checksum}  ${result.filename}" | shasum -a 256 -c`
+  const line = `${result.checksum}  ${result.filename}`.replace(/'/g, "'\\''")
+  return `printf '%s\\n' '${line}' | shasum -a 256 -c`
 }
 
 async function copyToClipboard(text: string) {
@@ -62,13 +65,15 @@ async function copyToClipboard(text: string) {
   }
 }
 
-function uploadFile(
-  file: File,
-  onProgress: (loaded: number, total: number) => void
-): Promise<{ url: string; deleteUrl: string; adminUrl: string; expires: string | null; checksum: string }> {
+function uploadFiles(
+  files: File[],
+  onProgress: (loaded: number, total: number) => void,
+  onProcessing: () => void
+): Promise<{ filename: string; url: string; deleteUrl: string; adminUrl: string; expires: string | null; checksum: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', `/${encodeURIComponent(file.name)}`)
+    xhr.open(files.length > 1 ? 'POST' : 'PUT', files.length > 1 ? '/archive' : `/${encodeURIComponent(files[0].name)}`)
+    xhr.setRequestHeader('Accept', 'application/json')
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {
@@ -76,70 +81,109 @@ function uploadFile(
       }
     })
 
+    xhr.upload.addEventListener('load', onProcessing)
+
     xhr.addEventListener('load', () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve({
-          url: xhr.responseText.trim(),
-          deleteUrl: xhr.getResponseHeader('X-Url-Delete') || '',
-          adminUrl: xhr.getResponseHeader('X-Url-Admin') || '',
-          expires: xhr.getResponseHeader('Expires'),
-          // "sha256:<hex>" - keep only the digest, that is what shasum compares
-          checksum: (xhr.getResponseHeader('Checksum') || '').replace(/^sha256:/i, ''),
-        })
+        try {
+          const {files} = JSON.parse(xhr.responseText) as {
+            files: {filename: string; url: string; deleteUrl: string; adminUrl: string; expires: string | null; sha256: string}[]
+          }
+          if (files.length !== 1 || !files[0].url) throw new Error('Invalid upload response')
+          const result = files[0]
+          resolve({...result, checksum: result.sha256})
+        } catch {
+          reject(new Error('Invalid upload response'))
+        }
       } else {
-        reject(new Error(xhr.statusText))
+        reject(new Error(xhr.responseText || xhr.statusText || `Upload failed (HTTP ${xhr.status})`))
       }
     })
 
     xhr.addEventListener('error', () => reject(new Error('Network error')))
     xhr.addEventListener('abort', () => reject(new Error('Upload aborted')))
 
-    xhr.send(file)
+    if (files.length > 1) {
+      const form = new FormData()
+      for (const file of files) form.append('file', file, file.name)
+      xhr.send(form)
+    } else {
+      xhr.send(files[0])
+    }
   })
 }
 
 export function UploadDropzone() {
+  const busy = useRef(false)
+  const nextUploadId = useRef(0)
   const [uploading, setUploading] = useState(false)
-  const [fileProgress, setFileProgress] = useState<FileProgress[]>([])
+  const [processing, setProcessing] = useState(false)
+  const [creatingZip, setCreatingZip] = useState(false)
+  const [progress, setProgress] = useState<UploadProgress>({loaded: 0, total: 0})
   const [results, setResults] = useState<UploadResult[]>([])
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [copiedChecksumIndex, setCopiedChecksumIndex] = useState<number | null>(null)
   const [copiedAdminIndex, setCopiedAdminIndex] = useState<number | null>(null)
+  const [copiedAll, setCopiedAll] = useState(false)
 
   const onDrop = useCallback(async (files: File[]) => {
+    if (busy.current || files.length === 0) return
+    busy.current = true
     setUploading(true)
-    setResults([])
-    setFileProgress(files.map((f) => ({filename: f.name, loaded: 0, total: f.size, done: false})))
+    setProcessing(false)
+    setCreatingZip(files.length > 1)
+    const filename = files.length > 1 ? 'files.zip' : files[0].name
+    const id = String(nextUploadId.current++)
+    setProgress({loaded: 0, total: files.reduce((sum, file) => sum + file.size, 0)})
 
-    const newResults: UploadResult[] = []
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      try {
-        const result = await uploadFile(file, (loaded, total) => {
-          setFileProgress((prev) =>
-            prev.map((p, idx) => idx === i ? {...p, loaded, total} : p)
-          )
-        })
-        setFileProgress((prev) =>
-          prev.map((p, idx) => idx === i ? {...p, done: true, loaded: p.total} : p)
-        )
-        newResults.push({filename: file.name, ...result, failed: false})
-      } catch {
-        setFileProgress((prev) =>
-          prev.map((p, idx) => idx === i ? {...p, done: true} : p)
-        )
-        newResults.push({
-          filename: file.name, url: '', deleteUrl: '', adminUrl: '', expires: null, checksum: '', failed: true,
-        })
-      }
+    try {
+      const result = await uploadFiles(files, (loaded, total) => {
+        setProgress({loaded, total})
+      }, () => setProcessing(true))
+      setResults((prev) => [...prev, {id, files, ...result, failed: false}])
+    } catch (error: unknown) {
+      setResults((prev) => [...prev, {
+        id, files, error: error instanceof Error ? error.message : 'Upload failed',
+        filename, url: '', deleteUrl: '', adminUrl: '', expires: null, checksum: '', failed: true,
+      }])
+    } finally {
+      busy.current = false
+      setUploading(false)
+      setProcessing(false)
     }
-
-    setResults(newResults)
-    setUploading(false)
   }, [])
 
-  const {getRootProps, getInputProps, isDragActive} = useDropzone({onDrop})
+  const {getRootProps, getInputProps, isDragActive} = useDropzone({onDrop, disabled: uploading, multiple: true})
+
+  const handleRetry = async (result: UploadResult) => {
+    if (busy.current) return
+    busy.current = true
+    setUploading(true)
+    setProcessing(false)
+    setCreatingZip(result.files.length > 1)
+    setProgress({loaded: 0, total: result.files.reduce((sum, file) => sum + file.size, 0)})
+    setResults((prev) => prev.map((item) => item.id === result.id ? {...item, retrying: true} : item))
+    try {
+      const uploaded = await uploadFiles(result.files, (loaded, total) => {
+        setProgress({loaded, total})
+      }, () => setProcessing(true))
+      setResults((prev) => prev.map((item) => item.id === result.id
+        ? {...item, ...uploaded, failed: false, retrying: false, error: undefined} : item))
+    } catch (error: unknown) {
+      setResults((prev) => prev.map((item) => item.id === result.id
+        ? {...item, retrying: false, error: error instanceof Error ? error.message : 'Upload failed'} : item))
+    } finally {
+      busy.current = false
+      setUploading(false)
+      setProcessing(false)
+    }
+  }
+
+  const handleCopyAll = async () => {
+    await copyToClipboard(results.filter((result) => !result.failed).map((result) => result.url).join('\n'))
+    setCopiedAll(true)
+    setTimeout(() => setCopiedAll(false), 2000)
+  }
 
   const handleCopy = async (url: string, index: number) => {
     await copyToClipboard(url)
@@ -159,35 +203,38 @@ export function UploadDropzone() {
     setTimeout(() => setCopiedAdminIndex(null), 2000)
   }
 
-  const handleDelete = async (result: UploadResult, index: number) => {
+  const handleDelete = async (result: UploadResult) => {
     if (!result.deleteUrl) return
     try {
       const path = new URL(result.deleteUrl).pathname
-      await fetch(path, {method: 'DELETE'})
-      setResults((prev) => prev.filter((_, i) => i !== index))
+      const response = await fetch(path, {method: 'DELETE'})
+      if (!response.ok) throw new Error(`Deletion failed (HTTP ${response.status})`)
+      setResults((prev) => prev.filter((item) => item.id !== result.id))
     } catch { /* ignore */
     }
   }
 
-  const totalLoaded = fileProgress.reduce((sum, p) => sum + p.loaded, 0)
-  const totalSize = fileProgress.reduce((sum, p) => sum + p.total, 0)
+  const {loaded: totalLoaded, total: totalSize} = progress
   const overallPercent = totalSize > 0 ? Math.round((totalLoaded / totalSize) * 100) : 0
 
   return (
     <div className="space-y-4">
       <div
         {...getRootProps()}
-        className={`border-2 border-dashed rounded-md p-12 text-center cursor-pointer transition-colors ${
+        className={cn('border-2 border-dashed rounded-md p-12 text-center transition-colors',
+          uploading ? 'cursor-wait' : 'cursor-pointer',
           isDragActive
             ? 'border-primary bg-primary/5'
             : 'border-muted-foreground/25 hover:border-primary/50'
-        }`}
+        )}
       >
         <input {...getInputProps()} />
         {uploading ? (
           <div className="space-y-4">
             <Loader2 className="h-12 w-12 mx-auto animate-spin text-primary"/>
-            <p className="text-muted-foreground">Uploading... {overallPercent}%</p>
+            <p className="text-muted-foreground" role="status">
+              {processing ? (creatingZip ? 'Creating ZIP...' : 'Finishing upload...') : `Uploading... ${overallPercent}%`}
+            </p>
             <Progress value={overallPercent} className="max-w-xs mx-auto"/>
             <p className="text-xs text-muted-foreground">
               {formatBytes(totalLoaded)} / {formatBytes(totalSize)}
@@ -202,31 +249,21 @@ export function UploadDropzone() {
             <p className="text-sm text-muted-foreground">
               or click to select files
             </p>
+            <p className="text-xs text-muted-foreground">Multiple files are combined into one ZIP with one download link.</p>
           </div>
         )}
       </div>
 
-      {/* Per-file progress during upload */}
-      {uploading && fileProgress.length > 1 && (
-        <div className="space-y-1">
-          {fileProgress.map((fp, i) => {
-            const pct = fp.total > 0 ? Math.round((fp.loaded / fp.total) * 100) : 0
-            return (
-              <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="truncate w-40">{fp.filename}</span>
-                <Progress value={pct} className="flex-1 h-1.5"/>
-                <span className="w-16 text-right">{fp.done ? 'Done' : `${pct}%`}</span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
       {results.length > 0 && (
         <div className="space-y-2">
+          {results.filter((result) => !result.failed).length > 1 && (
+            <Button variant="outline" onClick={handleCopyAll}>
+              {copiedAll ? <Check/> : <Copy/>} {copiedAll ? 'Copied' : 'Copy all download links'}
+            </Button>
+          )}
           {results.map((result, index) => (
             <div
-              key={index}
+              key={result.id}
               className="flex items-center gap-3 bg-muted border border-border rounded-md p-3"
             >
               {result.failed ? (
@@ -236,8 +273,11 @@ export function UploadDropzone() {
               )}
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-medium truncate">{result.filename}</p>
+                {result.files.length > 1 && (
+                  <p className="text-xs text-muted-foreground">{result.files.length} files in one ZIP</p>
+                )}
                 {result.failed ? (
-                  <p className="text-xs text-destructive">Upload failed</p>
+                  <p className="text-xs text-destructive break-words">{result.error || 'Upload failed'}</p>
                 ) : (
                   <>
                     <p className="text-xs text-muted-foreground truncate font-mono">
@@ -260,6 +300,11 @@ export function UploadDropzone() {
                   </>
                 )}
               </div>
+              {result.failed && (
+                <Button variant="outline" disabled={uploading} onClick={() => handleRetry(result)}>
+                  {result.retrying ? <Loader2 className="animate-spin"/> : <RotateCcw/>} Retry
+                </Button>
+              )}
               {!result.failed && (
                 <div className="flex items-center gap-1 shrink-0">
                   <button
@@ -308,7 +353,7 @@ export function UploadDropzone() {
                     <button
                       type="button"
                       className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-background transition-colors"
-                      onClick={() => handleDelete(result, index)}
+                      onClick={() => handleDelete(result)}
                       aria-label="Delete file"
                     >
                       <Trash2 className="h-4 w-4"/>

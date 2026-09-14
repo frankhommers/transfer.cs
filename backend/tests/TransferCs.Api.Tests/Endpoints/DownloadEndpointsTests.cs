@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Mvc.Testing;
+using TransferCs.Api.Tests.Helpers;
 
 namespace TransferCs.Api.Tests.Endpoints;
 
@@ -22,7 +23,7 @@ public class DownloadEndpointsTests : IClassFixture<WebApplicationFactory<Progra
     response.EnsureSuccessStatusCode();
 
     string url = (await response.Content.ReadAsStringAsync()).Trim();
-    string deleteUrl = response.Headers.GetValues("X-Url-Delete").First();
+    string deleteUrl = UploadResponseHeaders.DeleteUrl(response);
 
     return (url, deleteUrl);
   }

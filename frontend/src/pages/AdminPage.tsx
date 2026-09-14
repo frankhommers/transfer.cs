@@ -77,7 +77,7 @@ export function AdminPage() {
 
     const controller = new AbortController()
     fetch(`/api/admin/${encodeURIComponent(token)}/${encodeURIComponent(filename)}`, {
-      headers: {'Admin-Token': adminToken},
+      headers: {Authorization: `Bearer ${adminToken}`},
       signal: controller.signal,
       cache: 'no-store',
     }).then(async (response) => {
@@ -99,7 +99,7 @@ export function AdminPage() {
   const deleteFile = async () => {
     const response = await fetch(`/api/admin/${encodeURIComponent(token)}/${encodeURIComponent(filename)}`, {
       method: 'DELETE',
-      headers: {'Admin-Token': adminToken},
+      headers: {Authorization: `Bearer ${adminToken}`},
       cache: 'no-store',
     })
     if (response.ok) {

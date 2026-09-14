@@ -100,19 +100,16 @@ public static class DownloadEndpoints
       response.ContentLength = (long)contentLength;
       response.Headers.ContentDisposition = $"attachment; filename=\"{filename}\"";
       response.Headers["X-Remaining-Downloads"] = metadata.RemainingDownloads;
-      response.Headers["X-Remaining-Days"] = metadata.RemainingDays;
-
+      response.Headers.CacheControl = "no-store";
       if (metadata.MaxDate != DateTime.MinValue)
-        response.Headers.Expires = ExpiresHelper.FormatHttpDate(metadata.MaxDate);
+        response.Headers["Sunset"] = ExpiresHelper.FormatHttpDate(metadata.MaxDate);
 
       // The digest is over the plaintext. HEAD cannot decrypt, so for an encrypted upload
       // publishing it here would let anyone holding the link confirm the contents without
       // the password. Empty for uploads from before this field existed.
       if (!string.IsNullOrEmpty(metadata.Sha256) && !metadata.Encrypted)
       {
-        string checksum = ChecksumHelper.Format(metadata.Sha256);
-        response.Headers["Checksum"] = checksum;
-        response.Headers["X-Checksum"] = checksum;
+        response.Headers["Repr-Digest"] = HttpDigestHelper.Format(metadata.Sha256);
       }
 
       return Results.Empty;
@@ -134,6 +131,9 @@ public static class DownloadEndpoints
     IOptions<TransferCsOptions> optionsAccessor,
     CancellationToken ct)
   {
+    if (request.Headers.ContainsKey("X-Decrypt-Password"))
+      return Results.BadRequest("X-Decrypt-Password is no longer supported. Use Decrypt-Password.");
+
     FileMetadata? initialMetadata = await metadataService.CheckAndLoadAsync(token, filename, false, ct);
     if (initialMetadata == null)
       return Results.NotFound();
@@ -148,7 +148,7 @@ public static class DownloadEndpoints
       string contentType = initialMetadata.ContentType;
 
       // Decrypt if requested and file is encrypted
-      string decryptPassword = (request.Headers["Decrypt-Password"].FirstOrDefault() ?? request.Headers["X-Decrypt-Password"].FirstOrDefault()) ?? "";
+      string decryptPassword = request.Headers["Decrypt-Password"].FirstOrDefault() ?? "";
       bool decrypted = false;
       if (!string.IsNullOrEmpty(decryptPassword) && initialMetadata.Encrypted)
       {
@@ -177,16 +177,16 @@ public static class DownloadEndpoints
 
       response.Headers.ContentDisposition = disposition;
       response.Headers["X-Remaining-Downloads"] = metadata.RemainingDownloads;
-      response.Headers["X-Remaining-Days"] = metadata.RemainingDays;
+      response.Headers.CacheControl = "no-store";
+      if (metadata.MaxDate != DateTime.MinValue)
+        response.Headers["Sunset"] = ExpiresHelper.FormatHttpDate(metadata.MaxDate);
 
       // The stored digest is over the plaintext. For an encrypted file that hash would let a
       // holder of the link confirm the contents without the password, so only expose it when
       // the body being served is that plaintext. Empty for uploads from before this field.
       if (!string.IsNullOrEmpty(metadata.Sha256) && (!metadata.Encrypted || decrypted))
       {
-        string checksum = ChecksumHelper.Format(metadata.Sha256);
-        response.Headers["Checksum"] = checksum;
-        response.Headers["X-Checksum"] = checksum;
+        response.Headers["Repr-Digest"] = HttpDigestHelper.Format(metadata.Sha256);
       }
 
       if (range != null && range.ContentRange != null)

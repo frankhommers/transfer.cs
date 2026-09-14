@@ -84,7 +84,7 @@ if [ -d "$FILE" ]; then
 fi
 
 HEADERS=()
-[ -n "$EXPIRES" ] && HEADERS+=(-H "Expires: $EXPIRES")
+[ -n "$EXPIRES" ] && HEADERS+=(-H "File-Lifetime: $EXPIRES")
 [ -n "$MAX_DOWNLOADS" ] && HEADERS+=(-H "Max-Downloads: $MAX_DOWNLOADS")
 [ -n "$TOKEN" ] && HEADERS+=(-H "Token: $TOKEN")
 [ -n "$ENCRYPT" ] && HEADERS+=(-H "Encrypt-Password: $ENCRYPT")
@@ -101,10 +101,14 @@ if [ -z "$VERIFY" ]; then
   exit 0
 fi
 
-# --verify: hash locally, let the server reject a mismatch, then double-check
-# the digest it reports back.
+# --verify: a 201 response confirms the server validated Content-Digest before storing the file.
 EXPECTED=$(sha256_of "$SOURCE")
-HEADERS+=(-H "Expected-Checksum: sha256:$EXPECTED")
+EXPECTED_BASE64=$(
+  for ((i=0; i<${#EXPECTED}; i+=2)); do
+    printf '%b' "\\x${EXPECTED:i:2}"
+  done | base64 | tr -d '\r\n'
+)
+HEADERS+=(-H "Content-Digest: sha-256=:$EXPECTED_BASE64:")
 
 HDR_TMP=$(mktemp "${TMPDIR:-/tmp}/transfer-hdr-XXXXXX")
 TMP_FILES+=("$HDR_TMP")
@@ -113,18 +117,10 @@ BODY=$(curl --progress-bar -D "$HDR_TMP" --upload-file "$SOURCE" ${HEADERS[@]+"$
 
 # Skip any 100 Continue block curl may have received first.
 STATUS=$(grep -E '^HTTP/' "$HDR_TMP" | tail -1 | awk '{print $2}')
-if [ "${STATUS:-000}" -lt 200 ] || [ "${STATUS:-000}" -ge 300 ]; then
+if [ "${STATUS:-000}" != 201 ]; then
   echo "Upload failed (HTTP $STATUS): $BODY" >&2
   exit 1
 fi
 
-RETURNED=$(grep -i '^checksum:' "$HDR_TMP" | tail -1 \
-  | sed -E 's/^[Cc]hecksum:[[:space:]]*//; s/^sha256://I; s/[[:space:]]*$//')
-
-if [ -n "$RETURNED" ] && [ "$RETURNED" != "$EXPECTED" ]; then
-  echo "Checksum mismatch: sent $EXPECTED, server stored $RETURNED" >&2
-  exit 1
-fi
-
 echo "$BODY"
-echo "sha256: $EXPECTED (verified)" >&2
+echo "sha256: $EXPECTED (verified by server)" >&2

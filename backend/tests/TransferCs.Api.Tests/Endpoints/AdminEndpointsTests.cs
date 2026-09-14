@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using TransferCs.Api.Tests.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TransferCs.Api.Services;
@@ -23,9 +24,8 @@ public class AdminEndpointsTests
 
     using HttpResponseMessage response = await UploadAsync(client, token, "file.txt");
 
-    Assert.True(response.Headers.TryGetValues("X-Url-Admin", out IEnumerable<string>? values));
-    Uri adminUrl = new(values.Single());
-    Uri deleteUrl = new(response.Headers.GetValues("X-Url-Delete").Single());
+    Uri adminUrl = new(UploadResponseHeaders.AdminUrl(response));
+    Uri deleteUrl = new(UploadResponseHeaders.DeleteUrl(response));
     Assert.Equal($"/admin/{token}/file.txt", adminUrl.AbsolutePath);
     Assert.Equal(32, adminUrl.Fragment.TrimStart('#').Length);
     Assert.DoesNotContain(adminUrl.Fragment.TrimStart('#'), adminUrl.AbsolutePath);
@@ -42,8 +42,8 @@ public class AdminEndpointsTests
 
     using HttpResponseMessage response = await client.PostAsync("/", multipart);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal(32, new Uri(response.Headers.GetValues("X-Url-Admin").Single())
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    Assert.Equal(32, new Uri(UploadResponseHeaders.AdminUrl(response))
       .Fragment.TrimStart('#').Length);
   }
 
@@ -57,7 +57,7 @@ public class AdminEndpointsTests
 
     using HttpResponseMessage missing = await client.GetAsync($"/api/admin/{token}/file.txt");
     using HttpRequestMessage wrongRequest = new(HttpMethod.Get, $"/api/admin/{token}/file.txt");
-    wrongRequest.Headers.Add("Admin-Token", "wrong");
+    wrongRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "wrong");
     using HttpResponseMessage wrong = await client.SendAsync(wrongRequest);
 
     Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
@@ -83,7 +83,7 @@ public class AdminEndpointsTests
     downloadResponse.EnsureSuccessStatusCode();
 
     using HttpRequestMessage adminRequest = new(HttpMethod.Get, $"/api/admin/{token}/file.txt");
-    adminRequest.Headers.Add("Admin-Token", adminToken);
+    adminRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
     using HttpResponseMessage response = await client.SendAsync(adminRequest);
     using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
@@ -106,7 +106,7 @@ public class AdminEndpointsTests
     download.EnsureSuccessStatusCode();
 
     using HttpRequestMessage request = new(HttpMethod.Get, $"/api/admin/{token}/file.txt");
-    request.Headers.Add("Admin-Token", adminToken);
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
     using HttpResponseMessage response = await client.SendAsync(request);
     using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
@@ -123,7 +123,7 @@ public class AdminEndpointsTests
     using HttpResponseMessage upload = await UploadAsync(client, token, "file.txt");
 
     using HttpRequestMessage request = new(HttpMethod.Get, $"/api/admin/{token}/file.txt");
-    request.Headers.Add("Admin-Token", GetAdminToken(upload));
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GetAdminToken(upload));
     using HttpResponseMessage response = await client.SendAsync(request);
 
     Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
@@ -140,7 +140,7 @@ public class AdminEndpointsTests
     using HttpResponseMessage upload = await UploadAsync(client, token, "file.txt");
 
     using HttpRequestMessage request = new(HttpMethod.Delete, $"/api/admin/{token}/file.txt");
-    request.Headers.Add("Admin-Token", GetAdminToken(upload));
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GetAdminToken(upload));
     using HttpResponseMessage response = await client.SendAsync(request);
     using HttpResponseMessage download = await client.GetAsync($"/{token}/file.txt");
 
@@ -317,7 +317,7 @@ public class AdminEndpointsTests
 
   private static string GetAdminToken(HttpResponseMessage upload)
   {
-    string value = upload.Headers.GetValues("X-Url-Admin").Single();
+    string value = UploadResponseHeaders.AdminUrl(upload);
     return new Uri(value).Fragment.TrimStart('#');
   }
 
@@ -336,7 +336,7 @@ public class AdminEndpointsTests
     string adminToken)
   {
     using HttpRequestMessage request = new(HttpMethod.Get, $"/api/admin/{token}/file.txt");
-    request.Headers.Add("Admin-Token", adminToken);
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
     using HttpResponseMessage response = await client.SendAsync(request);
     response.EnsureSuccessStatusCode();
     return JsonDocument.Parse(await response.Content.ReadAsStringAsync());

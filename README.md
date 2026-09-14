@@ -9,7 +9,8 @@ Easy and fast file sharing from the command line. Inspired by [transfer.sh](http
 - Server-side encryption (`-H "Encrypt-Password: secret"`)
 - Client-side GPG encryption (pipe-based)
 - Expiry and download limits
-- Multi-file upload via multipart POST
+- Drop multiple files as one ZIP with one download and administration link
+- Multi-file API uploads via multipart POST
 - Archive upload/download via tar (with optional gzip)
 - Bundle download as zip/tar/tar.gz
 - Interactive command builder in the web UI
@@ -44,12 +45,12 @@ curl --upload-file ./hello.txt https://transfer.example.com/hello.txt
 curl --upload-file ./hello.txt -H "Token: my-slug" https://transfer.example.com/hello.txt
 
 # Upload with expiry and download limit
-curl --upload-file ./hello.txt -H "Expires: 7d" -H "Max-Downloads: 5" https://transfer.example.com/hello.txt
+curl --upload-file ./hello.txt -H "File-Lifetime: 7d" -H "Max-Downloads: 5" https://transfer.example.com/hello.txt
 
 # Download
 curl https://transfer.example.com/<token>/hello.txt -o ./hello.txt
 
-# Delete (URL from X-Url-Delete response header)
+# Delete (URL from the Link header or JSON deleteUrl)
 curl -X DELETE https://transfer.example.com/<token>/hello.txt/<deletion-token>
 ```
 
@@ -59,19 +60,53 @@ HEAD support canonical `/{token}/{filename}` plus `/get/{token}/{filename}`,
 disposition for the canonical, `get`, and `download` routes, while `inline` uses inline
 disposition. HEAD always reports attachment disposition, including on the `inline` route.
 
-### Multiple files
+### Multiple files as one ZIP
+
+Dropping multiple files in the browser uploads them together and creates one `files.zip`
+on the server. A single dropped file is uploaded directly. The browser shows upload
+progress followed by "Creating ZIP...", and returns one download link and one private
+administration link for the archive. Retry resends the whole selection if it fails.
+Previous upload results remain visible.
 
 ```bash
-# Upload via multipart POST
-curl -X POST -F "file=@a.txt" -F "file=@b.txt" https://transfer.example.com/
+# Create one ZIP from multiple files
+curl -F "file=@a.txt" -F "file=@b.txt" https://transfer.example.com/archive
 
-# Bundle download
+# Get the ZIP's metadata and private management links
+curl -H "Accept: application/json" -H "File-Lifetime: 7d" -H "Max-Downloads: 5" \
+  -F "file=@a.txt" -F "file=@b.txt" https://transfer.example.com/archive
+```
+
+`POST /archive` returns `201 Created`, `Location`, and management `Link` headers for the
+single ZIP. JSON responses have one entry in `files`; its checksum, expiry, custom `Token`,
+and download limit apply to the archive as a whole. The original files are stored only
+inside the ZIP. Downloading the ZIP counts as one download.
+
+ZIPs are built using temporary disk storage. Entries use flat filenames; duplicate names
+are suffixed (`photo (2).jpg`, etc.), comparing names case-insensitively. Path components
+are stripped and characters invalid in Windows filenames are replaced. Empty files are
+preserved. Both the combined original size and the resulting ZIP must fit
+`MaxUploadSizeKb`; the HTTP request-body limit also applies, including multipart overhead.
+Configured ClamAV prescan checks the completed ZIP before storage.
+
+### Multiple independent files through the API
+
+`POST /` remains available for separate file uploads:
+
+```bash
+curl -H "Accept: application/json" -F "file=@a.txt" -F "file=@b.txt" https://transfer.example.com/
+
+# Bundle already-uploaded files on download
 curl "https://transfer.example.com/bundle.zip?files=token1/a.txt,token2/b.txt" -o bundle.zip
 ```
 
-Multipart POST supports the expiry, download-limit, and token headers below. A custom
-token is rejected when the request contains multiple files. Encryption and expected
-checksum validation are not supported for multipart uploads.
+This endpoint returns per-file metadata and management links in JSON, or one download URL
+per line in plain text. `File-Lifetime` and `Max-Downloads` apply to each file. `Token`
+requires one file per request. Empty files reject this request before storage. If storage
+fails, completed uploads from that request are cleaned up.
+
+Both multipart endpoints reject `Encrypt-Password` and `Content-Digest`, which are PUT-only.
+For an encrypted or client-verified archive, create it locally and upload it with PUT.
 
 ### Archive (tar)
 
@@ -120,86 +155,146 @@ cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Passw
 
 | Header | Scope | Description | Example |
 |--------|-------|-------------|---------|
-| `Expires` | PUT, multipart POST | Expiry duration or date | `7d`, `12h30m`, `2026-04-15T00:00:00Z` |
-| `Max-Days` | PUT, multipart POST | Legacy expiry in days | `7` |
+| `File-Lifetime` | PUT, multipart POST | Positive duration or future expiry date | `7d`, `12h30m`, `2027-04-15T00:00:00Z` |
 | `Max-Downloads` | PUT, multipart POST | Download limit | `1`, `5`, `100` |
-| `Token` / `X-Token` | PUT, multipart POST | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
-| `Encrypt-Password` / `X-Encrypt-Password` | PUT | Server-side encryption password | any string |
-| `Expected-Checksum` / `X-Expected-Checksum` | PUT | Reject unless the body matches this SHA-256 | `sha256:9f86d081...` |
-| `Decrypt-Password` / `X-Decrypt-Password` | GET | Decrypt an encrypted download | any string |
-| `Admin-Token` | Admin API | Authorize access to a file's admin API | capability token |
+| `Token` | PUT, single-file POST `/`, POST `/archive` | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
+| `Encrypt-Password` | PUT | Server-side encryption password | any string |
+| `Content-Digest` | PUT | Validate the uploaded bytes before storage | `sha-256=:<base64>:` |
+| `Decrypt-Password` | GET | Decrypt an encrypted download | any string |
+| `Authorization` | Admin API | Per-file capability token | `Bearer <admin-token>` |
+| `Accept` | PUT, multipart POST | Request structured upload metadata | `application/json` |
 
 ### Response Headers
 
 | Header | Response scope | Description |
 |--------|----------------|-------------|
-| `X-Url-Delete` | PUT | URL to delete the uploaded file |
-| `X-Url-Admin` | PUT, single-file multipart POST | Private admin URL with its capability token in the fragment |
-| `Expires` | PUT when expiry is set; HEAD for an expiring file | Expiry date |
-| `Checksum` / `X-Checksum` | PUT; single-file multipart POST; unencrypted GET/HEAD; decrypted GET | `sha256:<hex>` of the file as received |
+| `Location` | PUT, single-file POST `/`, POST `/archive` | URL of the created file; uploads return `201 Created` |
+| `Link` | PUT, single-file POST `/`, POST `/archive` | Private administration and deletion links with URI relation types |
+| `Repr-Digest` | Unencrypted GET/HEAD; decrypted GET | SHA-256 of the entire selected file representation, including on range responses |
+| `Sunset` | GET, HEAD for an expiring file | Expected unavailability time as an HTTP date |
 | `X-Remaining-Downloads` | GET, HEAD | Remaining download count |
-| `X-Remaining-Days` | GET, HEAD | Remaining days until expiry |
+| `Cache-Control: no-store` | Upload responses, file GET/HEAD, admin API | Prevent caching of capabilities and download-limited responses |
+| `Vary: Accept` | Upload responses | Response format depends on `Accept` |
 
-A single-file multipart response has no deletion URL. A multi-file multipart response
-contains only newline-separated download URLs, with no per-file admin, deletion, or
-checksum headers.
+`Expires` is reserved for HTTP cache freshness. It is not used for file retention.
+`Sunset` is a hint about the file's lifetime, not a guarantee of availability: deletion,
+download limits or physical cleanup can make the file unavailable earlier.
+
+Multi-file `POST /` responses return `201 Created` with per-file metadata in JSON (or
+newline-separated URLs in plain text). They have no single-file `Location`, `Link`, or
+digest headers. Upload responses do not put a file's hash in `Content-Digest` or
+`Repr-Digest`: their body describes the upload result, not the file contents.
+
+### Upload metadata
+
+PUT and multipart POST use the same JSON envelope when requested with `Accept: application/json`:
+
+```json
+{
+  "files": [
+    {
+      "filename": "hello.txt",
+      "url": "https://transfer.example.com/<token>/hello.txt",
+      "deleteUrl": "https://transfer.example.com/<token>/hello.txt/<deletion-token>",
+      "adminUrl": "https://transfer.example.com/admin/<token>/hello.txt#<admin-token>",
+      "sha256": "<64 lowercase hexadecimal characters>",
+      "expires": "2027-04-15T00:00:00Z"
+    }
+  ]
+}
+```
+
+`expires` is `null` when no expiry is configured. `sha256` describes the bytes received
+from the uploader, including the plaintext before server-side encryption. Keep the full
+response private; share only the public `url`. Plain-text responses remain convenient
+for shell pipelines: one download URL per line, without metadata.
 
 ### Checksums
 
-Successful PUT and single-file multipart POST responses carry a `Checksum` header with the
-SHA-256 of the bytes the server received. For server-side encrypted PUT uploads this is
-the digest of the *plaintext*, so it matches what you compute locally; the stored
-ciphertext is not byte-reproducible.
+The server accepts one SHA-256 value in `Content-Digest`, using the byte-sequence format
+from [RFC 9530](https://www.rfc-editor.org/rfc/rfc9530.html). The algorithm key is `sha-256`
+and the hash is base64 encoded between colons. Multiple digests, other algorithms, and
+parameters are not supported by this upload API and return `400`.
 
 ```bash
-# Show the checksum of an upload
-curl -sD- --upload-file ./hello.txt https://transfer.example.com/hello.txt | grep -i '^checksum:'
-
-# Have the server reject a corrupted or truncated upload instead of storing it
+# Validate the upload before storage and receive the resulting metadata
 curl --upload-file ./hello.txt \
-  -H "Expected-Checksum: sha256:$(shasum -a 256 ./hello.txt | cut -d' ' -f1)" \
+  -H "Accept: application/json" \
+  -H "Content-Digest: sha-256=:$(openssl dgst -sha256 -binary ./hello.txt | openssl base64 -A):" \
   https://transfer.example.com/hello.txt
-```
 
-A mismatch returns `400` and nothing is stored. `Expected-Checksum` accepts a bare
-64-character hexadecimal digest, or that digest prefixed by case-insensitive `sha256` or
-`sha-256` and a `:` or `=` separator. Do not include the filename from a full `sha256sum`
-output line. It is supported only on PUT uploads. Single-file multipart POST reports a
-checksum; multi-file multipart POST does not expose per-file checksum headers.
-
-The download response carries the same `Checksum` header, except for encrypted files —
-there the plaintext digest is only sent when you supply `Decrypt-Password`, so a link
-alone can never be used to confirm the contents.
-
-To read the checksum, size and expiry *without* downloading, use `HEAD`. It does not
-count as a download, so a `Max-Downloads: 1` link stays intact:
-
-```bash
+# Inspect the full file's digest, size and expiry without counting as a download
 curl -sI https://transfer.example.com/<token>/hello.txt
+
+# Compute a base64 SHA-256 locally for comparison with Repr-Digest
+openssl dgst -sha256 -binary ./hello.txt | openssl base64 -A
 ```
 
-For encrypted uploads the `Checksum` header is omitted on `HEAD`, since it cannot decrypt.
+Malformed or mismatching upload digests return `400`; no upload is stored. For GET and
+HEAD, `Repr-Digest` describes the entire file, even when a range request returns only
+part of it. A `Content-Digest` of that partial body would be a different value.
 
-The installable CLI has a `--verify` flag that does the hashing for you:
+Encrypted files omit `Repr-Digest` on HEAD and ciphertext downloads. A decrypted GET
+returns the plaintext digest. This prevents a public link alone from revealing the
+plaintext checksum. The private upload JSON and authenticated admin API retain it.
+
+The installable CLI handles digest encoding and validation:
 
 ```bash
 transfer ./big.iso --verify
 ```
 
-### Private file administration
+It sends `Content-Digest` and reports success only after `201 Created` confirms that the
+server accepted the validated upload. Reinstall the CLI when migrating an existing server.
 
-Successful PUT and single-file multipart POST responses return an `X-Url-Admin` header. Keep
-this URL private: the admin route is capability-protected and provides file metadata,
-the checksum, download counters, optional IP history, and permanent deletion. The
-capability follows `#`, so it is not sent in the HTTP request target or referrer. The UI
-stores it in `sessionStorage`, removes it from the address bar, and sends it to the API
-in the `Admin-Token` header. It is separate from the legacy deletion capability in
-`X-Url-Delete`.
+### File administration
+
+Single-file upload responses (including ZIP creation) include this [RFC 8288](https://www.rfc-editor.org/rfc/rfc8288.html)
+link relation, also available as `adminUrl` in JSON:
+
+```http
+Link: <https://transfer.example.com/admin/sample-token/hello.txt#example-admin-capability>; rel="https://github.com/frankhommers/transfer.cs#file-administration"
+```
+
+The relation identifies the private administration page for the uploaded file. The
+capability follows `#`, so it is not sent in the HTTP request target. The UI saves it in
+`sessionStorage`, removes it from the address bar, and sends it to the admin API as
+`Authorization: Bearer <admin-token>`. The admin token is independent of the deletion token.
+
+```bash
+curl -H "Authorization: Bearer <admin-token>" https://transfer.example.com/api/admin/<token>/hello.txt
+curl -X DELETE -H "Authorization: Bearer <admin-token>" https://transfer.example.com/api/admin/<token>/hello.txt
+```
 
 Download IP history is disabled by default. Enable it with
 `TransferCs__DownloadLogEnabled=true`; `TransferCs__DownloadLogMaxEntries` bounds the
 retained entries while the total counter continues increasing. Full client IP addresses
 are stored, so enable this only when your privacy policy and local law permit it.
+
+### File deletion
+
+The deletion relation identifies a capability URL that accepts DELETE, also available
+as `deleteUrl` in JSON. It does not use GET for deletion:
+
+```http
+Link: <https://transfer.example.com/sample-token/hello.txt/example-deletion-capability>; rel="https://github.com/frankhommers/transfer.cs#file-deletion"
+```
+
+Keep both management links private. A single upload can return multiple `Link` fields;
+HTTP clients may combine them into one comma-separated field. The URI relation names
+are application-defined extensions using the standard Link syntax.
+
+### Header migration
+
+This is a breaking API change. Old response headers are no longer emitted. Uploads
+using `Expires`, `Max-Days`, `Expected-Checksum`, `X-Expected-Checksum`, `X-Token`, or
+`X-Encrypt-Password` return `400` rather than silently losing their options. Replace
+these with `File-Lifetime`, `Content-Digest`, `Token`, and `Encrypt-Password` as appropriate.
+`X-Decrypt-Password` is rejected on GET; use `Decrypt-Password`. Admin requests require
+`Authorization: Bearer`; `Admin-Token` is no longer accepted. Replace `X-Url-Admin` and
+`X-Url-Delete` parsing with `Link` or JSON metadata, and `Checksum`/`X-Checksum` with
+`Repr-Digest` on downloads or `sha256` in private metadata. Calculate remaining time
+from `Sunset` instead of `X-Remaining-Days`.
 
 ### AI Agent Integration
 
@@ -245,12 +340,11 @@ implementation is the local filesystem.
 | `TransferCs__InitialSiteId` | *(empty)* | Exact configured site ID used as the legacy-data migration target; required with `Sites` |
 | `TransferCs__Sites` | *(empty)* | Site-ID-keyed definitions; see below |
 
-`PurgeDays` is used as an upload's logical expiry when neither a valid `Expires`
-header nor a positive `Max-Days` header supplies one. Logical expiry blocks downloads.
+`PurgeDays` is used as an upload's logical expiry when no `File-Lifetime` header is supplied. Logical expiry blocks downloads.
 Separately, a positive `PurgeIntervalHours` runs physical cleanup immediately at startup
 and then every N hours; zero disables physical deletion. Physical cleanup removes payloads
 whose filesystem `CreationTimeUtc` is older than that site's `PurgeDays`. It does not use
-an upload's `MaxDate`/`Expires` value, so logical and physical expiry can occur at different
+an upload's `MaxDate` value, so logical and physical expiry can occur at different
 times.
 
 For PUT, `MaxUploadSizeKb` limits the request payload/file. For multipart POST, it is
@@ -258,12 +352,12 @@ checked for each file, while Kestrel's request-body limit still applies to the c
 multipart request. In multi-site mode Kestrel uses the largest effective finite site
 limit; if any site is unlimited, its global request-body limit is unlimited. The selected
 site's per-file limit is still enforced by the application. ClamAV prescan applies only
-to PUT uploads and only when `PerformClamAvPrescan=true` and `ClamAvHost` is set;
-multipart uploads are not prescanned.
+to PUT uploads and generated ZIPs when `PerformClamAvPrescan=true` and `ClamAvHost` is set;
+independent files uploaded through `POST /` are not prescanned.
 
-Basic auth, when configured, protects PUT, multipart POST, and the legacy DELETE route.
+Basic auth, when configured, protects PUT, both multipart POST endpoints, and the legacy DELETE route.
 Basic auth does not protect GET or HEAD, so downloads remain public. The admin API
-bypasses basic auth and instead requires the per-file `Admin-Token`. A configured
+bypasses basic auth and instead requires the per-file `Authorization: Bearer` token. A configured
 username/password or a matching entry in `HttpAuthHtpasswd` is accepted; the file reader
 supports only plaintext passwords and `{SHA}` SHA-1/base64 entries.
 
@@ -551,7 +645,11 @@ expected upload; the defaults for write and idle timeouts are `0s` and `180s`.
 
 ### Important: Custom headers
 
-transfer.cs uses custom request/response headers (`Token`, `Encrypt-Password`, `Expires`, `Max-Downloads`, etc.). Traefik passes these through by default. However, if you use a `headers` middleware with `customRequestHeaders` or `customResponseHeaders`, make sure you don't strip these headers. The `X-Url-Delete` response header is needed for clients to delete uploaded files.
+Preserve `Authorization`, `Content-Digest`, `File-Lifetime`, `Token`, `Encrypt-Password`,
+`Decrypt-Password`, and `Max-Downloads` on requests, and `Location`, `Link`, `Repr-Digest`,
+and `Sunset` on responses. Traefik passes them through by default. Check any configured
+`customRequestHeaders` or `customResponseHeaders` overrides. When CORS is enabled,
+transfer.cs exposes the response headers needed by browser clients.
 
 `TrustedProxies` is required for correct client-IP filtering, auth bypass lists, rate
 limiting, and download logging behind a reverse proxy. Prefer the actual Docker network

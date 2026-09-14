@@ -15,35 +15,40 @@ public static class UploadEndpoints
     app.MapPut("/upload/{filename}", HandlePutAsync);
     app.MapPut("/{filename}", HandlePutAsync);
     app.MapPost("/", HandlePostAsync);
+    app.MapPost("/archive", HandleArchiveAsync);
     return app;
   }
 
-  /// <summary>
-  /// Resolves the expiry date from the Expires request header, falling back to Max-Days header,
-  /// then PurgeDays config.
-  /// </summary>
-  private static DateTime? ResolveExpiry(HttpRequest request, TransferCsOptions options)
+  private static readonly string[] _removedHeaders =
+    ["Expires", "Max-Days", "Expected-Checksum", "X-Expected-Checksum", "X-Token", "X-Encrypt-Password"];
+
+  private static IResult? ValidateUploadHeaders(HttpRequest request, TransferCsOptions options, out DateTime? expiry)
   {
-    // Expires header: "7d", "12h30m", "2026-04-15T00:00:00Z", etc.
-    string? expiresHeader = request.Headers["Expires"].FirstOrDefault();
-    DateTime? expiry = ExpiresHelper.Parse(expiresHeader);
-    if (expiry != null)
-      return expiry;
+    expiry = null;
+    foreach (string header in _removedHeaders)
+    {
+      if (request.Headers.ContainsKey(header))
+      {
+        return Results.BadRequest($"{header} is no longer supported. Use File-Lifetime, Content-Digest, " +
+                                  "Token and Encrypt-Password; see the API documentation.");
+      }
+    }
 
-    // Legacy Max-Days header
-    if (request.Headers.TryGetValue("Max-Days", out StringValues maxDaysHeader)
-        && int.TryParse(maxDaysHeader.FirstOrDefault(), out int maxDays)
-        && maxDays > 0)
-      return DateTime.UtcNow.AddDays(maxDays);
-
-    // Config fallback
-    if (options.PurgeDays > 0)
-      return DateTime.UtcNow.AddDays(options.PurgeDays);
+    if (request.Headers.TryGetValue("File-Lifetime", out StringValues lifetime))
+    {
+      expiry = ExpiresHelper.Parse(lifetime.ToString());
+      if (expiry == null)
+        return Results.BadRequest("Invalid File-Lifetime. Use a positive duration or a future date.");
+    }
+    else if (options.PurgeDays > 0)
+    {
+      expiry = DateTime.UtcNow.AddDays(options.PurgeDays);
+    }
 
     return null;
   }
 
-  private static void ApplyLifetime(FileMetadata metadata, HttpRequest request, TransferCsOptions options)
+  private static void ApplyLifetime(FileMetadata metadata, HttpRequest request, DateTime? expiry)
   {
     // Max-Downloads
     if (request.Headers.TryGetValue("Max-Downloads", out StringValues maxDownloadsHeader)
@@ -52,7 +57,6 @@ public static class UploadEndpoints
       metadata.MaxDownloads = maxDownloads;
 
     // Expiry
-    DateTime? expiry = ResolveExpiry(request, options);
     if (expiry != null) metadata.MaxDate = expiry.Value;
   }
 
@@ -66,16 +70,17 @@ public static class UploadEndpoints
   {
     TransferCsOptions options = siteContext.Site.Options;
     string sanitized = SanitizeHelper.SanitizeFilename(filename);
-    string contentType = MimeHelper.GetMimeType(sanitized);
+    IResult? headerError = ValidateUploadHeaders(request, options, out DateTime? expiry);
+    if (headerError != null)
+      return headerError;
 
-    // Expected-Checksum is validated before anything is stored, so a mismatch leaves no trace.
-    string? expectedChecksumHeader = request.Headers["Expected-Checksum"].FirstOrDefault()
-                                     ?? request.Headers["X-Expected-Checksum"].FirstOrDefault();
+    string? expectedChecksumHeader = request.Headers.ContainsKey("Content-Digest")
+      ? request.Headers["Content-Digest"].ToString() : null;
     string? expectedChecksum = null;
-    if (!string.IsNullOrWhiteSpace(expectedChecksumHeader))
+    if (expectedChecksumHeader != null)
     {
-      if (!ChecksumHelper.TryParseExpected(expectedChecksumHeader, out string parsed, out string checksumError))
-        return Results.BadRequest(checksumError);
+      if (!HttpDigestHelper.TryParse(expectedChecksumHeader, out string parsed))
+        return Results.BadRequest("Content-Digest must contain one SHA-256 digest: sha-256=:<base64>:");
       expectedChecksum = parsed;
     }
 
@@ -84,9 +89,6 @@ public static class UploadEndpoints
     Directory.CreateDirectory(tempDir);
     long contentLength;
     string sha256;
-    string? reservedToken = null;
-    bool uploadCompleted = false;
-
     try
     {
       await using (FileStream fs = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -108,6 +110,33 @@ public static class UploadEndpoints
         return Results.BadRequest(
           $"Checksum mismatch: expected sha256:{expectedChecksum}, got sha256:{sha256}.");
 
+      return await StoreUploadAsync(sanitized, tempPath, contentLength, sha256, expiry,
+        request, storage, metadataService, options, ct);
+    }
+    finally
+    {
+      if (File.Exists(tempPath))
+        File.Delete(tempPath);
+    }
+  }
+
+  private static async Task<IResult> StoreUploadAsync(
+    string sanitized,
+    string tempPath,
+    long contentLength,
+    string sha256,
+    DateTime? expiry,
+    HttpRequest request,
+    IStorageProvider storage,
+    MetadataService metadataService,
+    TransferCsOptions options,
+    CancellationToken ct)
+  {
+    string contentType = MimeHelper.GetMimeType(sanitized);
+    string? reservedToken = null;
+    bool uploadCompleted = false;
+    try
+    {
       if (options.MaxUploadSizeBytes > 0 && contentLength > options.MaxUploadSizeBytes)
         return Results.BadRequest($"File too large. Max size: {options.MaxUploadSizeKb} KB");
 
@@ -121,7 +150,7 @@ public static class UploadEndpoints
       }
 
       // Custom or random token
-      string? customToken = (request.Headers["Token"].FirstOrDefault() ?? request.Headers["X-Token"].FirstOrDefault());
+      string? customToken = request.Headers["Token"].FirstOrDefault();
       (string? token, IResult? reservationError) = await ReserveTokenAsync(
         customToken, options.RandomTokenLength, storage, ct);
       if (reservationError != null)
@@ -138,18 +167,16 @@ public static class UploadEndpoints
         ContentLength = contentLength,
         DeletionToken = deletionToken,
         AdminToken = adminToken,
-        // Hash of the plaintext as received, so it matches what the uploader computes
-        // locally with sha256sum. PGP output is not deterministic, so hashing the stored
-        // ciphertext would give the user nothing to compare against.
+        // Hash the file or generated ZIP before encryption; PGP output is not deterministic.
         Sha256 = sha256
       };
 
-      ApplyLifetime(metadata, request, options);
+      ApplyLifetime(metadata, request, expiry);
 
       // Encryption
       await using Stream sourceStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.Read);
       Stream bodyStream = sourceStream;
-      string encryptPassword = (request.Headers["Encrypt-Password"].FirstOrDefault() ?? request.Headers["X-Encrypt-Password"].FirstOrDefault()) ?? "";
+      string encryptPassword = request.Headers["Encrypt-Password"].FirstOrDefault() ?? "";
       if (!string.IsNullOrEmpty(encryptPassword))
       {
         bodyStream = await EncryptionService.EncryptAsync(bodyStream, encryptPassword);
@@ -165,12 +192,11 @@ public static class UploadEndpoints
       await metadataService.SaveAsync(reservedToken, sanitized, metadata, ct);
       uploadCompleted = true;
 
-      string url = UrlHelper.ResolveUrl(request, $"/{reservedToken}/{sanitized}", options);
-      string deleteUrl = UrlHelper.ResolveUrl(request, $"/{reservedToken}/{sanitized}/{deletionToken}", options);
-      string adminUrl = UrlHelper.ResolveUrl(request, $"/admin/{reservedToken}/{sanitized}", options) + $"#{adminToken}";
-      DateTime? expiry = ResolveExpiry(request, options);
-
-      return new UploadResult(url, deleteUrl, adminUrl, expiry, sha256);
+      string escapedFilename = Uri.EscapeDataString(sanitized);
+      string url = UrlHelper.ResolveUrl(request, $"/{reservedToken}/{escapedFilename}", options);
+      string deleteUrl = UrlHelper.ResolveUrl(request, $"/{reservedToken}/{escapedFilename}/{deletionToken}", options);
+      string adminUrl = UrlHelper.ResolveUrl(request, $"/admin/{reservedToken}/{escapedFilename}", options) + $"#{adminToken}";
+      return new UploadResult([new UploadedFile(sanitized, url, deleteUrl, adminUrl, sha256, expiry)]);
     }
     finally
     {
@@ -183,6 +209,53 @@ public static class UploadEndpoints
         }
         await storage.ReleaseTokenAsync(reservedToken, CancellationToken.None);
       }
+    }
+  }
+
+  private static async Task<IResult> HandleArchiveAsync(
+    HttpRequest request,
+    IStorageProvider storage,
+    MetadataService metadataService,
+    SiteContext siteContext,
+    CancellationToken ct)
+  {
+    TransferCsOptions options = siteContext.Site.Options;
+    IResult? headerError = ValidateUploadHeaders(request, options, out DateTime? expiry);
+    if (headerError != null)
+      return headerError;
+    if (request.Headers.ContainsKey("Content-Digest") || request.Headers.ContainsKey("Encrypt-Password"))
+      return Results.BadRequest("Content-Digest and Encrypt-Password are supported only for PUT uploads.");
+    if (!request.HasFormContentType)
+      return Results.BadRequest("Expected multipart form data");
+
+    IFormCollection form = await request.ReadFormAsync(ct);
+    List<IFormFile> files = form.Files.ToList();
+    if (files.Count == 0)
+      return Results.BadRequest("No files uploaded");
+    if (options.MaxUploadSizeBytes > 0 && files.Sum(file => file.Length) > options.MaxUploadSizeBytes)
+      return Results.BadRequest($"Files too large. Max combined size: {options.MaxUploadSizeKb} KB");
+
+    Directory.CreateDirectory(options.ResolvedTempPath);
+    string tempPath = Path.Combine(options.ResolvedTempPath, $"archive-{Guid.NewGuid():N}.zip");
+    try
+    {
+      long contentLength;
+      string sha256;
+      await using (FileStream archiveStream = new(tempPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+      {
+        await ZipUploadHelper.WriteAsync(archiveStream, files, ct);
+        contentLength = archiveStream.Length;
+        if (options.MaxUploadSizeBytes > 0 && contentLength > options.MaxUploadSizeBytes)
+          return Results.BadRequest($"ZIP too large. Max size: {options.MaxUploadSizeKb} KB");
+        archiveStream.Position = 0;
+        sha256 = await ChecksumHelper.ComputeSha256Async(archiveStream, ct);
+      }
+
+      return await StoreUploadAsync("files.zip", tempPath, contentLength, sha256, expiry,
+        request, storage, metadataService, options, ct);
+    }
+    finally
+    {
       if (File.Exists(tempPath))
         File.Delete(tempPath);
     }
@@ -196,91 +269,98 @@ public static class UploadEndpoints
     CancellationToken ct)
   {
     TransferCsOptions options = siteContext.Site.Options;
+    IResult? headerError = ValidateUploadHeaders(request, options, out DateTime? expiry);
+    if (headerError != null)
+      return headerError;
+    if (request.Headers.ContainsKey("Content-Digest") || request.Headers.ContainsKey("Encrypt-Password"))
+      return Results.BadRequest("Content-Digest and Encrypt-Password are supported only for PUT uploads.");
 
     if (!request.HasFormContentType)
       return Results.BadRequest("Expected multipart form data");
 
     IFormCollection form = await request.ReadFormAsync(ct);
-    List<IFormFile> files = form.Files.Where(file => file.Length > 0).ToList();
+    List<IFormFile> files = form.Files.ToList();
     if (files.Count == 0)
       return Results.BadRequest("No files uploaded");
+    if (files.Any(file => file.Length == 0))
+      return Results.BadRequest("Empty files are not supported. No files were uploaded.");
     if (options.MaxUploadSizeBytes > 0 && files.Any(file => file.Length > options.MaxUploadSizeBytes))
       return Results.BadRequest($"File too large. Max size: {options.MaxUploadSizeKb} KB");
 
-    string? requestCustomToken = request.Headers["Token"].FirstOrDefault() ??
-                                 request.Headers["X-Token"].FirstOrDefault();
+    string? requestCustomToken = request.Headers["Token"].FirstOrDefault();
     if (!string.IsNullOrEmpty(requestCustomToken) && files.Count > 1)
       return Results.BadRequest("A custom token can only be used with one file per request.");
 
-    List<string> urls = [];
-    List<string> checksums = [];
-    List<string> adminUrls = [];
+    List<UploadedFile> uploadedFiles = [];
     List<(string Token, string Filename)> completedUploads = [];
 
     try
     {
-    foreach (IFormFile file in files)
-    {
-      string sanitized = SanitizeHelper.SanitizeFilename(
-        string.IsNullOrWhiteSpace(file.FileName) ? "_" : file.FileName);
-      string? reservedToken = null;
-      bool uploadCompleted = false;
-      try
+      foreach (IFormFile file in files)
       {
-        string contentType = MimeHelper.GetMimeType(sanitized);
-
-        (string? token, IResult? reservationError) = await ReserveTokenAsync(
-          requestCustomToken, options.RandomTokenLength, storage, ct);
-        if (reservationError != null)
+        string sanitized = SanitizeHelper.SanitizeFilename(
+          string.IsNullOrWhiteSpace(file.FileName) ? "_" : file.FileName);
+        string? reservedToken = null;
+        bool uploadCompleted = false;
+        try
         {
-          await DeleteUploadsAsync(storage, completedUploads);
-          return reservationError;
-        }
-        reservedToken = token!;
+          string contentType = MimeHelper.GetMimeType(sanitized);
 
-        string deletionToken = TokenService.GenerateAdminToken();
-        string adminToken = TokenService.GenerateAdminToken();
-
-        FileMetadata metadata = new()
-        {
-          Generation = Guid.NewGuid().ToString("N"),
-          ContentType = contentType,
-          ContentLength = file.Length,
-          DeletionToken = deletionToken,
-          AdminToken = adminToken
-        };
-
-        ApplyLifetime(metadata, request, options);
-
-        await using (ChecksumHelper.HashingReadStream stream = new(file.OpenReadStream()))
-        {
-          await storage.PutAsync(reservedToken, sanitized, stream, contentType, (ulong)file.Length, ct);
-          metadata.Sha256 = stream.Sha256Hex;
-        }
-
-        await metadataService.SaveAsync(reservedToken, sanitized, metadata, ct);
-        uploadCompleted = true;
-        completedUploads.Add((reservedToken, sanitized));
-        checksums.Add(metadata.Sha256);
-
-        string url = UrlHelper.ResolveUrl(request, $"/{reservedToken}/{sanitized}", options);
-        urls.Add(url);
-        adminUrls.Add(UrlHelper.ResolveUrl(request, $"/admin/{reservedToken}/{sanitized}", options) +
-                      $"#{adminToken}");
-      }
-      finally
-      {
-        if (reservedToken != null)
-        {
-          if (!uploadCompleted)
+          (string? token, IResult? reservationError) = await ReserveTokenAsync(
+            requestCustomToken, options.RandomTokenLength, storage, ct);
+          if (reservationError != null)
           {
-            await storage.DeleteAsync(reservedToken, sanitized, CancellationToken.None);
-            await storage.DeleteAsync(reservedToken, $"{sanitized}.metadata", CancellationToken.None);
+            await DeleteUploadsAsync(storage, completedUploads);
+            return reservationError;
           }
-          await storage.ReleaseTokenAsync(reservedToken, CancellationToken.None);
+          reservedToken = token!;
+
+          string deletionToken = TokenService.GenerateAdminToken();
+          string adminToken = TokenService.GenerateAdminToken();
+
+          FileMetadata metadata = new()
+          {
+            Generation = Guid.NewGuid().ToString("N"),
+            ContentType = contentType,
+            ContentLength = file.Length,
+            DeletionToken = deletionToken,
+            AdminToken = adminToken
+          };
+
+          ApplyLifetime(metadata, request, expiry);
+
+          await using (ChecksumHelper.HashingReadStream stream = new(file.OpenReadStream()))
+          {
+            await storage.PutAsync(reservedToken, sanitized, stream, contentType, (ulong)file.Length, ct);
+            metadata.Sha256 = stream.Sha256Hex;
+          }
+
+          await metadataService.SaveAsync(reservedToken, sanitized, metadata, ct);
+          uploadCompleted = true;
+          completedUploads.Add((reservedToken, sanitized));
+
+          string escapedFilename = Uri.EscapeDataString(sanitized);
+          string url = UrlHelper.ResolveUrl(request, $"/{reservedToken}/{escapedFilename}", options);
+          string deleteUrl = UrlHelper.ResolveUrl(request,
+            $"/{reservedToken}/{escapedFilename}/{deletionToken}", options);
+          string adminUrl = UrlHelper.ResolveUrl(request, $"/admin/{reservedToken}/{escapedFilename}", options) +
+                            $"#{adminToken}";
+          uploadedFiles.Add(new UploadedFile(sanitized, url, deleteUrl, adminUrl, metadata.Sha256,
+            expiry));
+        }
+        finally
+        {
+          if (reservedToken != null)
+          {
+            if (!uploadCompleted)
+            {
+              await storage.DeleteAsync(reservedToken, sanitized, CancellationToken.None);
+              await storage.DeleteAsync(reservedToken, $"{sanitized}.metadata", CancellationToken.None);
+            }
+            await storage.ReleaseTokenAsync(reservedToken, CancellationToken.None);
+          }
         }
       }
-    }
     }
     catch
     {
@@ -288,18 +368,7 @@ public static class UploadEndpoints
       throw;
     }
 
-    // One header value per file would be ambiguous, so only emit it for a single-file post.
-    if (checksums.Count == 1 && !string.IsNullOrEmpty(checksums[0]))
-    {
-      string value = ChecksumHelper.Format(checksums[0]);
-      request.HttpContext.Response.Headers["Checksum"] = value;
-      request.HttpContext.Response.Headers["X-Checksum"] = value;
-    }
-
-    if (adminUrls.Count == 1)
-      request.HttpContext.Response.Headers["X-Url-Admin"] = adminUrls[0];
-
-    return Results.Text(string.Join("\n", urls) + "\n", "text/plain");
+    return new UploadResult(uploadedFiles);
   }
 
   private static async Task DeleteUploadsAsync(IStorageProvider storage,
@@ -333,46 +402,5 @@ public static class UploadEndpoints
     }
 
     return (null, Results.Problem("Could not allocate an upload token.", statusCode: 503));
-  }
-
-  /// <summary>
-  /// Custom IResult that returns text/plain body with X-Url-Delete and Expires headers.
-  /// </summary>
-  private sealed class UploadResult : IResult
-  {
-    private readonly string _url;
-    private readonly string _deleteUrl;
-    private readonly string _adminUrl;
-    private readonly DateTime? _expires;
-    private readonly string _sha256;
-
-    public UploadResult(string url, string deleteUrl, string adminUrl, DateTime? expires, string sha256)
-    {
-      _url = url;
-      _deleteUrl = deleteUrl;
-      _adminUrl = adminUrl;
-      _expires = expires;
-      _sha256 = sha256;
-    }
-
-    public async Task ExecuteAsync(HttpContext httpContext)
-    {
-      httpContext.Response.StatusCode = 200;
-      httpContext.Response.ContentType = "text/plain";
-      httpContext.Response.Headers["X-Url-Delete"] = _deleteUrl;
-      httpContext.Response.Headers["X-Url-Admin"] = _adminUrl;
-      if (_expires != null)
-        httpContext.Response.Headers.Expires = ExpiresHelper.FormatHttpDate(_expires.Value);
-
-      // Header, not body: the body is exactly the URL and CLI workflows pipe it straight on.
-      if (!string.IsNullOrEmpty(_sha256))
-      {
-        string value = ChecksumHelper.Format(_sha256);
-        httpContext.Response.Headers["Checksum"] = value;
-        httpContext.Response.Headers["X-Checksum"] = value;
-      }
-
-      await httpContext.Response.WriteAsync(_url + "\n");
-    }
   }
 }

@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using TransferCs.Api.Models;
 using TransferCs.Api.Services;
 
@@ -12,6 +13,11 @@ public static class AdminEndpoints
     return app;
   }
 
+  private static string ReadBearerToken(HttpRequest request) =>
+    AuthenticationHeaderValue.TryParse(request.Headers.Authorization.ToString(), out AuthenticationHeaderValue? auth) &&
+    auth.Scheme.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
+      ? auth.Parameter ?? "" : "";
+
   private static async Task<IResult> HandleMetadataAsync(
     string token,
     string filename,
@@ -19,7 +25,7 @@ public static class AdminEndpoints
     MetadataService metadataService,
     CancellationToken ct)
   {
-    string adminToken = request.Headers["Admin-Token"].FirstOrDefault() ?? "";
+    string adminToken = ReadBearerToken(request);
     FileMetadata? metadata = await metadataService.LoadForAdminAsync(token, filename, adminToken, ct);
     if (metadata == null)
       return Results.NotFound();
@@ -45,7 +51,7 @@ public static class AdminEndpoints
     MetadataService metadataService,
     CancellationToken ct)
   {
-    string adminToken = request.Headers["Admin-Token"].FirstOrDefault() ?? "";
+    string adminToken = ReadBearerToken(request);
     if (!await metadataService.DeleteForAdminAsync(token, filename, adminToken, ct))
       return Results.NotFound();
 

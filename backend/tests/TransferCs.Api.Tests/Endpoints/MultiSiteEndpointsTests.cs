@@ -54,8 +54,8 @@ public class MultiSiteEndpointsTests
     using HttpResponseMessage betaDownload = await SendAsync(
       client, HttpMethod.Get, $"/{token}/file.txt", "beta.test");
 
-    Assert.Equal(HttpStatusCode.OK, alphaUpload.StatusCode);
-    Assert.Equal(HttpStatusCode.OK, betaUpload.StatusCode);
+    Assert.Equal(HttpStatusCode.Created, alphaUpload.StatusCode);
+    Assert.Equal(HttpStatusCode.Created, betaUpload.StatusCode);
     Assert.Equal("alpha", await alphaDownload.Content.ReadAsStringAsync());
     Assert.Equal("beta", await betaDownload.Content.ReadAsStringAsync());
   }
