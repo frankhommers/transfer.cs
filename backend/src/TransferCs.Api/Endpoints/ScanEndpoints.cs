@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using TransferCs.Api.Configuration;
 using TransferCs.Api.Services;
+using TransferCs.Api.Storage;
 
 namespace TransferCs.Api.Endpoints;
 
@@ -17,6 +18,7 @@ public static class ScanEndpoints
     string filename,
     HttpRequest request,
     IOptions<TransferCsOptions> optionsAccessor,
+    DiskSpaceGuard diskSpace,
     CancellationToken ct)
   {
     TransferCsOptions options = optionsAccessor.Value;
@@ -28,7 +30,7 @@ public static class ScanEndpoints
     Directory.CreateDirectory(tempDir);
     try
     {
-      await using (FileStream fs = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+      await using (Stream fs = diskSpace.CreateFile(tempPath))
       {
         await request.Body.CopyToAsync(fs, ct);
       }
@@ -51,6 +53,7 @@ public static class ScanEndpoints
     HttpRequest request,
     IHttpClientFactory httpClientFactory,
     IOptions<TransferCsOptions> optionsAccessor,
+    DiskSpaceGuard diskSpace,
     CancellationToken ct)
   {
     TransferCsOptions options = optionsAccessor.Value;
@@ -65,7 +68,7 @@ public static class ScanEndpoints
     Directory.CreateDirectory(tempDir);
     try
     {
-      await using (FileStream fs = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+      await using (Stream fs = diskSpace.CreateFile(tempPath))
       {
         await request.Body.CopyToAsync(fs, ct);
       }

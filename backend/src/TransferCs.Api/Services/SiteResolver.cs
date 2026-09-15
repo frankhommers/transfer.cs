@@ -85,6 +85,7 @@ public sealed partial class SiteResolver
     Provider = global.Provider,
     BasePath = global.BasePath,
     TempPath = global.TempPath,
+    MinFreeDiskSpaceMb = global.MinFreeDiskSpaceMb,
     MaxUploadSizeKb = site.MaxUploadSizeKb ?? global.MaxUploadSizeKb,
     PurgeDays = site.PurgeDays ?? global.PurgeDays,
     PurgeIntervalHours = global.PurgeIntervalHours,

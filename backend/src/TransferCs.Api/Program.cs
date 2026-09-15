@@ -20,6 +20,10 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Configuration
 builder.Services.Configure<TransferCsOptions>(builder.Configuration.GetSection(TransferCsOptions.SectionName));
+builder.Services.AddOptions<TransferCsOptions>()
+  .Validate(options => options.MinFreeDiskSpaceMb is >= 0 and <= long.MaxValue / (1024 * 1024),
+    "TransferCs:MinFreeDiskSpaceMb must be a non-negative number of MiB within the supported range.")
+  .ValidateOnStart();
 TransferCsOptions config = builder.Configuration.GetSection(TransferCsOptions.SectionName).Get<TransferCsOptions>() ??
                             new TransferCsOptions();
 if (config.RandomTokenLength is < 6 or > 128)
@@ -33,6 +37,9 @@ builder.Services.AddOptions<ForwardedHeadersOptions>()
 builder.Services.ConfigureHttpJsonOptions(options =>
   options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.AddSingleton<SiteResolver>();
+builder.Services.AddSingleton<IDiskSpaceProbe, DiskSpaceProbe>();
+builder.Services.AddSingleton<DiskSpaceGuard>();
+builder.Services.AddSingleton<EncryptionService>();
 builder.Services.AddSingleton<SiteStorageFactory>();
 builder.Services.AddSingleton<SiteDataMigration>();
 builder.Services.AddSingleton<KeyedLock>();
@@ -106,6 +113,7 @@ if (config.RateLimitRequestsPerMinute > 0)
   app.UseRateLimiter();
 
 app.UseMiddleware<BasicAuthMiddleware>();
+app.UseMiddleware<DiskSpaceMiddleware>();
 
 // Static file serving (frontend SPA)
 app.MapStaticAssets();

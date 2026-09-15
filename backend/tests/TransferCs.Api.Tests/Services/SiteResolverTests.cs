@@ -18,6 +18,7 @@ public class SiteResolverTests
     Assert.Equal("alpha", site.Id);
     Assert.Equal("Alpha", site.Options.Title);
     Assert.Equal("alpha-data", site.DataDirectory);
+    Assert.Equal(5120, site.Options.MinFreeDiskSpaceMb);
   }
 
   [Fact]
@@ -65,6 +66,7 @@ public class SiteResolverTests
 
   private static TransferCsOptions CreateOptions() => new()
   {
+    MinFreeDiskSpaceMb = 5120,
     InitialSiteId = "alpha",
     Sites = new Dictionary<string, SiteOptions>
     {

@@ -272,6 +272,12 @@ digests for encrypted files. Decrypted GET includes `Repr-Digest`.
 
 - **Max upload size:** {{MaxUploadSize}}
 - **Auto-purge:** {{PurgeDays}}
+- **Minimum free disk space:** {{MinFreeDiskSpace}}
+
+The server can return **507 Insufficient Storage** when an upload or temporary-file
+operation would use its disk space reserve. This can also happen during an upload,
+including a ZIP upload. Incomplete uploads are removed; retry the complete request
+after space becomes available. Do not retry continuously or delete other files to make room.
 
 ## Source
 

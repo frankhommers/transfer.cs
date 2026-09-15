@@ -1,23 +1,22 @@
 using Org.BouncyCastle.Bcpg;
 using Org.BouncyCastle.Bcpg.OpenPgp;
 using Org.BouncyCastle.Security;
+using TransferCs.Api.Storage;
 
 namespace TransferCs.Api.Services;
 
-public static class EncryptionService
+public sealed class EncryptionService(DiskSpaceGuard diskSpace)
 {
   /// <summary>
   /// Encrypts plaintext stream using PGP symmetric encryption.
   /// Uses a temp file to avoid holding the entire file in memory.
   /// </summary>
-  public static async Task<Stream> EncryptAsync(Stream plaintext, string password)
+  public async Task<Stream> EncryptAsync(Stream plaintext, string password)
   {
     if (string.IsNullOrEmpty(password))
       return plaintext;
 
-    string tempPath = Path.Combine(Path.GetTempPath(), $"encrypt-{Guid.NewGuid():N}");
-    FileStream tempFile = new(tempPath, FileMode.Create, FileAccess.ReadWrite,
-      FileShare.None, 81920, FileOptions.DeleteOnClose);
+    Stream tempFile = diskSpace.CreateTemporaryFile("encrypt");
 
     try
     {
@@ -53,7 +52,7 @@ public static class EncryptionService
   /// Decrypts a PGP-encrypted stream using the password.
   /// Uses a temp file to avoid holding the entire file in memory.
   /// </summary>
-  public static async Task<Stream> DecryptAsync(Stream ciphertext, string password)
+  public async Task<Stream> DecryptAsync(Stream ciphertext, string password)
   {
     if (string.IsNullOrEmpty(password))
       return ciphertext;
@@ -67,9 +66,7 @@ public static class EncryptionService
     PgpObjectFactory plainFactory = new(clear);
     PgpLiteralData literalData = (PgpLiteralData)plainFactory.NextPgpObject();
 
-    string tempPath = Path.Combine(Path.GetTempPath(), $"decrypt-{Guid.NewGuid():N}");
-    FileStream tempFile = new(tempPath, FileMode.Create, FileAccess.ReadWrite,
-      FileShare.None, 81920, FileOptions.DeleteOnClose);
+    Stream tempFile = diskSpace.CreateTemporaryFile("decrypt");
 
     try
     {

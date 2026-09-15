@@ -9,6 +9,7 @@ public class TransferCsOptions
   public string BasePath { get; set; } = "./data";
   public string TempPath { get; set; } = Path.GetTempPath();
   public long MaxUploadSizeKb { get; set; }
+  public long MinFreeDiskSpaceMb { get; set; }
   public int PurgeDays { get; set; }
   public int PurgeIntervalHours { get; set; }
   public int RateLimitRequestsPerMinute { get; set; }

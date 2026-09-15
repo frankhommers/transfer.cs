@@ -315,10 +315,11 @@ implementation is the local filesystem.
 | `TransferCs__Title` | `transfer.cs` | Instance title shown in the UI |
 | `TransferCs__BaseUrl` | *(request URL)* | Absolute public base URL used in generated links; when empty, derive it from the request |
 | `TransferCs__BasePath` | `./data` app; `/data` container | Local payload and metadata directory |
-| `TransferCs__TempPath` | System temp; `/tmp` container | Directory used to stage PUT and standalone scan request bodies |
+| `TransferCs__TempPath` | System temp; `/tmp` container | Temporary directory for uploads, multipart bodies, ZIPs, encryption/decryption, bundles, and scans |
 | `TransferCs__PurgeDays` | `0` (disabled) | Default upload expiry in days and physical file-age threshold |
 | `TransferCs__PurgeIntervalHours` | `0` (disabled) | Global interval for physical purge runs |
 | `TransferCs__MaxUploadSizeKb` | `0` (unlimited) | Upload size limit in KB |
+| `TransferCs__MinFreeDiskSpaceMb` | `0` (disabled) | Minimum available disk space in MiB on each filesystem used for payloads and temporary files |
 | `TransferCs__RandomTokenLength` | `10` | Generated token length; must be from 6 through 128 |
 | `TransferCs__DownloadLogEnabled` | `false` | Retain client IP and UTC time for accepted downloads |
 | `TransferCs__DownloadLogMaxEntries` | `50` | Recent download entries retained per file; effective minimum is one when logging is enabled |
@@ -354,6 +355,31 @@ limit; if any site is unlimited, its global request-body limit is unlimited. The
 site's per-file limit is still enforced by the application. ClamAV prescan applies only
 to PUT uploads and generated ZIPs when `PerformClamAvPrescan=true` and `ClamAvHost` is set;
 independent files uploaded through `POST /` are not prescanned.
+
+### Disk space reserve
+
+Set `TransferCs__MinFreeDiskSpaceMb=5120` to keep a 5 GiB reserve. Zero disables the
+guard; negative values are rejected at startup. The setting is global across all sites.
+The server checks the actual filesystem behind each destination, including container
+volumes and `TempPath`, before writing more data. If storage and temporary files use
+different filesystems, each must have the configured reserve available.
+
+Checks continue while writing, including requests without `Content-Length`, ZIP creation,
+encryption, scans, and generated download bundles. Concurrent writes within one server
+process share the same guard. Temporary copies count too: a transfer can be refused even
+if its final file alone would fit. On refusal the server returns `507 Insufficient Storage`
+with a readable message. Failed uploads and their temporary files are cleaned up; an
+independent multipart batch is rolled back as a whole. Uploads work again once space is
+available. No existing uploads are automatically deleted by this guard.
+
+Ordinary downloads and deletion remain available. Updates to existing metadata, such as
+download counters, may use the reserve. Downloads requiring temporary files can return
+507. This is an application guard, not an operating-system quota or a preallocated file:
+filesystem overhead, other processes, and other server replicas can still consume free
+space. A small additional margin covers allocation overhead; use filesystem quotas when
+a hard boundary is required. Health checks continue to report process availability.
+
+### Access controls
 
 Basic auth, when configured, protects PUT, both multipart POST endpoints, and the legacy DELETE route.
 Basic auth does not protect GET or HEAD, so downloads remain public. The admin API

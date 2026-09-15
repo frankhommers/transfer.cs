@@ -36,12 +36,13 @@ public static class DownloadEndpoints
         IStorageProvider storage,
         MetadataService metadataService,
         IOptions<TransferCsOptions> optionsAccessor,
+        EncryptionService encryption,
         CancellationToken ct) =>
       {
         if (!IsValidAction(action))
           return Results.NotFound();
         return await HandleGetAsync(action, token, filename, request, response, storage, metadataService, optionsAccessor,
-          ct);
+          encryption, ct);
       });
 
     app.MapMethods("/{token}/{filename}",
@@ -62,8 +63,9 @@ public static class DownloadEndpoints
           IStorageProvider storage,
           MetadataService metadataService,
           IOptions<TransferCsOptions> optionsAccessor,
+          EncryptionService encryption,
           CancellationToken ct) =>
-        HandleGetAsync("get", token, filename, request, response, storage, metadataService, optionsAccessor, ct));
+        HandleGetAsync("get", token, filename, request, response, storage, metadataService, optionsAccessor, encryption, ct));
 
     return app;
   }
@@ -129,6 +131,7 @@ public static class DownloadEndpoints
     IStorageProvider storage,
     MetadataService metadataService,
     IOptions<TransferCsOptions> optionsAccessor,
+    EncryptionService encryption,
     CancellationToken ct)
   {
     if (request.Headers.ContainsKey("X-Decrypt-Password"))
@@ -153,7 +156,7 @@ public static class DownloadEndpoints
       if (!string.IsNullOrEmpty(decryptPassword) && initialMetadata.Encrypted)
       {
         decrypted = true;
-        stream = await EncryptionService.DecryptAsync(stream, decryptPassword);
+        stream = await encryption.DecryptAsync(stream, decryptPassword);
         contentLength = (ulong)stream.Length;
         if (!string.IsNullOrEmpty(initialMetadata.DecryptedContentType))
           contentType = initialMetadata.DecryptedContentType;

@@ -66,6 +66,8 @@ public static class UploadEndpoints
     IStorageProvider storage,
     MetadataService metadataService,
     SiteContext siteContext,
+    DiskSpaceGuard diskSpace,
+    EncryptionService encryption,
     CancellationToken ct)
   {
     TransferCsOptions options = siteContext.Site.Options;
@@ -91,7 +93,7 @@ public static class UploadEndpoints
     string sha256;
     try
     {
-      await using (FileStream fs = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+      await using (Stream fs = diskSpace.CreateFile(tempPath))
       {
         // Hash rides along on the copy that already happens - no second pass over the bytes.
         (contentLength, sha256) = await ChecksumHelper.CopyAndHashAsync(request.Body, fs, ct);
@@ -111,7 +113,7 @@ public static class UploadEndpoints
           $"Checksum mismatch: expected sha256:{expectedChecksum}, got sha256:{sha256}.");
 
       return await StoreUploadAsync(sanitized, tempPath, contentLength, sha256, expiry,
-        request, storage, metadataService, options, ct);
+        request, storage, metadataService, options, encryption, ct);
     }
     finally
     {
@@ -130,6 +132,7 @@ public static class UploadEndpoints
     IStorageProvider storage,
     MetadataService metadataService,
     TransferCsOptions options,
+    EncryptionService encryption,
     CancellationToken ct)
   {
     string contentType = MimeHelper.GetMimeType(sanitized);
@@ -179,7 +182,7 @@ public static class UploadEndpoints
       string encryptPassword = request.Headers["Encrypt-Password"].FirstOrDefault() ?? "";
       if (!string.IsNullOrEmpty(encryptPassword))
       {
-        bodyStream = await EncryptionService.EncryptAsync(bodyStream, encryptPassword);
+        bodyStream = await encryption.EncryptAsync(bodyStream, encryptPassword);
         metadata.Encrypted = true;
         metadata.DecryptedContentType = contentType;
         metadata.ContentType = "text/plain; charset=utf-8";
@@ -217,6 +220,8 @@ public static class UploadEndpoints
     IStorageProvider storage,
     MetadataService metadataService,
     SiteContext siteContext,
+    DiskSpaceGuard diskSpace,
+    EncryptionService encryption,
     CancellationToken ct)
   {
     TransferCsOptions options = siteContext.Site.Options;
@@ -228,8 +233,8 @@ public static class UploadEndpoints
     if (!request.HasFormContentType)
       return Results.BadRequest("Expected multipart form data");
 
-    IFormCollection form = await request.ReadFormAsync(ct);
-    List<IFormFile> files = form.Files.ToList();
+    await using BufferedUploadForm uploadForm = await BufferedUploadForm.ReadAsync(request, diskSpace, ct);
+    List<IFormFile> files = uploadForm.Form.Files.ToList();
     if (files.Count == 0)
       return Results.BadRequest("No files uploaded");
     if (options.MaxUploadSizeBytes > 0 && files.Sum(file => file.Length) > options.MaxUploadSizeBytes)
@@ -241,7 +246,7 @@ public static class UploadEndpoints
     {
       long contentLength;
       string sha256;
-      await using (FileStream archiveStream = new(tempPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+      await using (Stream archiveStream = diskSpace.CreateFile(tempPath))
       {
         await ZipUploadHelper.WriteAsync(archiveStream, files, ct);
         contentLength = archiveStream.Length;
@@ -252,7 +257,7 @@ public static class UploadEndpoints
       }
 
       return await StoreUploadAsync("files.zip", tempPath, contentLength, sha256, expiry,
-        request, storage, metadataService, options, ct);
+        request, storage, metadataService, options, encryption, ct);
     }
     finally
     {
@@ -266,6 +271,7 @@ public static class UploadEndpoints
     IStorageProvider storage,
     MetadataService metadataService,
     SiteContext siteContext,
+    DiskSpaceGuard diskSpace,
     CancellationToken ct)
   {
     TransferCsOptions options = siteContext.Site.Options;
@@ -278,8 +284,8 @@ public static class UploadEndpoints
     if (!request.HasFormContentType)
       return Results.BadRequest("Expected multipart form data");
 
-    IFormCollection form = await request.ReadFormAsync(ct);
-    List<IFormFile> files = form.Files.ToList();
+    await using BufferedUploadForm uploadForm = await BufferedUploadForm.ReadAsync(request, diskSpace, ct);
+    List<IFormFile> files = uploadForm.Form.Files.ToList();
     if (files.Count == 0)
       return Results.BadRequest("No files uploaded");
     if (files.Any(file => file.Length == 0))

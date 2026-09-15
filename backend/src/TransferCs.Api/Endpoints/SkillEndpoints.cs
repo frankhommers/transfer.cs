@@ -38,6 +38,8 @@ public static class SkillEndpoints
       .Replace("{{Title}}", options.Title)
       .Replace("{{BaseUrl}}", baseUrl)
       .Replace("{{MaxUploadSize}}", maxUploadSize)
+      .Replace("{{MinFreeDiskSpace}}", options.MinFreeDiskSpaceMb > 0
+        ? $"{options.MinFreeDiskSpaceMb} MiB" : "disabled")
       .Replace("{{PurgeDays}}", purgeDays);
 
     return Results.Text(content, "text/markdown; charset=utf-8");

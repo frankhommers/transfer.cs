@@ -4,10 +4,12 @@ public class LocalStorageProvider : IStorageProvider
 {
   private static readonly TimeSpan ReservationLifetime = TimeSpan.FromDays(1);
   private readonly string _basePath;
+  private readonly DiskSpaceGuard? _diskSpace;
 
-  public LocalStorageProvider(string basePath)
+  public LocalStorageProvider(string basePath, DiskSpaceGuard? diskSpace = null)
   {
     _basePath = basePath;
+    _diskSpace = diskSpace;
   }
 
   public bool IsRangeSupported => true;
@@ -22,10 +24,15 @@ public class LocalStorageProvider : IStorageProvider
     Directory.CreateDirectory(dir);
 
     string filePath = Path.Combine(dir, filename);
+    // Existing download counters may use the reserve so ordinary downloads keep working.
+    bool metadataUpdate = filename.EndsWith(".metadata", StringComparison.Ordinal) && File.Exists(filePath);
+    DiskSpaceGuard? guard = metadataUpdate ? null : _diskSpace;
+    guard?.EnsureAvailable(dir, checked((long)contentLength));
     string tempPath = Path.Combine(dir, $".{filename}.{Guid.NewGuid():N}.tmp");
     try
     {
-      await using (FileStream fs = new(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+      await using (Stream fs = guard?.CreateFile(tempPath) ??
+        new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
       {
         await content.CopyToAsync(fs, ct);
         await fs.FlushAsync(ct);

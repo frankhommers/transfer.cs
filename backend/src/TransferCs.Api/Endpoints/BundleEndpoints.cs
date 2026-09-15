@@ -14,16 +14,16 @@ public static class BundleEndpoints
   public static WebApplication MapBundleEndpoints(this WebApplication app)
   {
     app.MapGet("/bundle.zip", (HttpRequest request, IStorageProvider storage,
-        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, CancellationToken ct) =>
-      HandleZipAsync(request, storage, metadataService, optionsAccessor, ct));
+        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, DiskSpaceGuard diskSpace, CancellationToken ct) =>
+      HandleZipAsync(request, storage, metadataService, optionsAccessor, diskSpace, ct));
 
     app.MapGet("/bundle.tar", (HttpRequest request, IStorageProvider storage,
-        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, CancellationToken ct) =>
-      HandleTarAsync(request, storage, metadataService, optionsAccessor, ct));
+        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, DiskSpaceGuard diskSpace, CancellationToken ct) =>
+      HandleTarAsync(request, storage, metadataService, optionsAccessor, diskSpace, ct));
 
     app.MapGet("/bundle.tar.gz", (HttpRequest request, IStorageProvider storage,
-        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, CancellationToken ct) =>
-      HandleTarGzAsync(request, storage, metadataService, optionsAccessor, ct));
+        MetadataService metadataService, IOptions<TransferCsOptions> optionsAccessor, DiskSpaceGuard diskSpace, CancellationToken ct) =>
+      HandleTarGzAsync(request, storage, metadataService, optionsAccessor, diskSpace, ct));
 
     return app;
   }
@@ -54,15 +54,14 @@ public static class BundleEndpoints
     IStorageProvider storage,
     MetadataService metadataService,
     IOptions<TransferCsOptions> optionsAccessor,
+    DiskSpaceGuard diskSpace,
     CancellationToken ct)
   {
     List<(string Token, string Filename)> files = ParseFiles(request);
     if (files.Count == 0)
       return Results.BadRequest("No files specified. Use ?files=token1/file1,token2/file2");
 
-    string tempPath = Path.Combine(Path.GetTempPath(), $"bundle-{Guid.NewGuid():N}.zip");
-    FileStream tempFile = new(tempPath, FileMode.Create, FileAccess.ReadWrite,
-      FileShare.None, 81920, FileOptions.DeleteOnClose);
+    Stream tempFile = diskSpace.CreateTemporaryFile("bundle");
 
     try
     {
@@ -109,15 +108,14 @@ public static class BundleEndpoints
     IStorageProvider storage,
     MetadataService metadataService,
     IOptions<TransferCsOptions> optionsAccessor,
+    DiskSpaceGuard diskSpace,
     CancellationToken ct)
   {
     List<(string Token, string Filename)> files = ParseFiles(request);
     if (files.Count == 0)
       return Results.BadRequest("No files specified. Use ?files=token1/file1,token2/file2");
 
-    string tempPath = Path.Combine(Path.GetTempPath(), $"bundle-{Guid.NewGuid():N}.tar");
-    FileStream tempFile = new(tempPath, FileMode.Create, FileAccess.ReadWrite,
-      FileShare.None, 81920, FileOptions.DeleteOnClose);
+    Stream tempFile = diskSpace.CreateTemporaryFile("bundle");
 
     try
     {
@@ -166,15 +164,14 @@ public static class BundleEndpoints
     IStorageProvider storage,
     MetadataService metadataService,
     IOptions<TransferCsOptions> optionsAccessor,
+    DiskSpaceGuard diskSpace,
     CancellationToken ct)
   {
     List<(string Token, string Filename)> files = ParseFiles(request);
     if (files.Count == 0)
       return Results.BadRequest("No files specified. Use ?files=token1/file1,token2/file2");
 
-    string tempPath = Path.Combine(Path.GetTempPath(), $"bundle-{Guid.NewGuid():N}.tar.gz");
-    FileStream tempFile = new(tempPath, FileMode.Create, FileAccess.ReadWrite,
-      FileShare.None, 81920, FileOptions.DeleteOnClose);
+    Stream tempFile = diskSpace.CreateTemporaryFile("bundle");
 
     try
     {

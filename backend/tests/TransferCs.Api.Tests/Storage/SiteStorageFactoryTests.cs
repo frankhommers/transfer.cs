@@ -14,7 +14,8 @@ public class SiteStorageFactoryTests : IDisposable
   {
     TransferCsOptions options = CreateOptions();
     SiteResolver resolver = new(Options.Create(options));
-    SiteStorageFactory factory = new(Options.Create(options), resolver);
+    using DiskSpaceGuard diskSpace = new(Options.Create(options), new DiskSpaceProbe());
+    SiteStorageFactory factory = new(Options.Create(options), resolver, diskSpace);
     ResolvedSite alpha = resolver.Resolve("alpha.test")!;
     ResolvedSite beta = resolver.Resolve("beta.test")!;
 

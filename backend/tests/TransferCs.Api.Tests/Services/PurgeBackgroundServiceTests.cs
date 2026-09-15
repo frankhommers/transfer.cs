@@ -20,7 +20,8 @@ public class PurgeBackgroundServiceTests : IDisposable
       PurgeIntervalHours = 24
     };
     SiteResolver resolver = new(Options.Create(options));
-    SiteStorageFactory factory = new(Options.Create(options), resolver);
+    using DiskSpaceGuard diskSpace = new(Options.Create(options), new DiskSpaceProbe());
+    SiteStorageFactory factory = new(Options.Create(options), resolver, diskSpace);
     IStorageProvider storage = factory.Get(resolver.LegacySite);
     using MemoryStream content = new("expired"u8.ToArray());
     await storage.PutAsync("expired-token", "file.txt", content, "text/plain", 7);

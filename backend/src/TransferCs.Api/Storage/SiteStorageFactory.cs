@@ -10,19 +10,21 @@ public sealed class SiteStorageFactory
   private readonly string _basePath;
   private readonly string _canonicalBasePath;
   private readonly SiteResolver _resolver;
+  private readonly DiskSpaceGuard _diskSpace;
   private readonly ConcurrentDictionary<string, IStorageProvider> _providers = new(StringComparer.Ordinal);
 
-  public SiteStorageFactory(IOptions<TransferCsOptions> optionsAccessor, SiteResolver resolver)
+  public SiteStorageFactory(IOptions<TransferCsOptions> optionsAccessor, SiteResolver resolver, DiskSpaceGuard diskSpace)
   {
     _basePath = optionsAccessor.Value.BasePath;
     _canonicalBasePath = Path.GetFullPath(_basePath);
     _resolver = resolver;
+    _diskSpace = diskSpace;
   }
 
   public string Type => "local";
 
   public IStorageProvider Get(ResolvedSite site) =>
-    _providers.GetOrAdd(site.Id, _ => new LocalStorageProvider(ResolvePath(site)));
+    _providers.GetOrAdd(site.Id, _ => new LocalStorageProvider(ResolvePath(site), _diskSpace));
 
   private string ResolvePath(ResolvedSite site)
   {

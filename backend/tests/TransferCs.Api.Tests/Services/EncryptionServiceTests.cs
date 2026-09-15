@@ -1,10 +1,15 @@
 using System.Text;
+using Microsoft.Extensions.Options;
+using TransferCs.Api.Configuration;
 using TransferCs.Api.Services;
+using TransferCs.Api.Storage;
 
 namespace TransferCs.Api.Tests.Services;
 
 public class EncryptionServiceTests
 {
+  private readonly EncryptionService _encryption = new(new DiskSpaceGuard(
+    Options.Create(new TransferCsOptions()), new DiskSpaceProbe()));
   [Fact]
   public async Task EncryptAndDecrypt_RoundTrips()
   {
@@ -12,7 +17,7 @@ public class EncryptionServiceTests
     using MemoryStream plaintextStream = new(original);
     const string password = "testpassword123";
 
-    Stream encrypted = await EncryptionService.EncryptAsync(plaintextStream, password);
+    Stream encrypted = await _encryption.EncryptAsync(plaintextStream, password);
     Assert.NotNull(encrypted);
 
     // Encrypted should be different from original
@@ -22,7 +27,7 @@ public class EncryptionServiceTests
 
     // Decrypt should give back original
     encryptedBytes.Position = 0;
-    Stream decrypted = await EncryptionService.DecryptAsync(encryptedBytes, password);
+    Stream decrypted = await _encryption.DecryptAsync(encryptedBytes, password);
     using MemoryStream resultMs = new();
     await decrypted.CopyToAsync(resultMs);
     Assert.Equal(original, resultMs.ToArray());
@@ -34,7 +39,7 @@ public class EncryptionServiceTests
     byte[] original = "No encryption needed"u8.ToArray();
     MemoryStream stream = new(original);
 
-    Stream result = await EncryptionService.EncryptAsync(stream, "");
+    Stream result = await _encryption.EncryptAsync(stream, "");
 
     Assert.Same(stream, result);
   }
@@ -45,7 +50,7 @@ public class EncryptionServiceTests
     byte[] original = "No decryption needed"u8.ToArray();
     MemoryStream stream = new(original);
 
-    Stream result = await EncryptionService.DecryptAsync(stream, "");
+    Stream result = await _encryption.DecryptAsync(stream, "");
 
     Assert.Same(stream, result);
   }
