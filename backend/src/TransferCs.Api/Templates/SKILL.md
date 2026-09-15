@@ -24,6 +24,10 @@ The response URL will be `{{BaseUrl}}/my-slug/file.txt`.
 
 ## Upload multiple files as one ZIP
 
+Only files sent together in the same request are combined into one ZIP. Uploading one
+file first and another later creates two separate uploads, each with its own download
+link. Later uploads are never added to an existing ZIP.
+
 ```bash
 curl -H "Accept: application/json" -F "file=@a.txt" -F "file=@b.txt" {{BaseUrl}}/archive
 ```
@@ -36,8 +40,9 @@ Without `Accept: application/json`, the body is the ZIP's download URL.
 
 Files are flattened into the ZIP; duplicate names receive a numeric suffix and empty
 files are preserved. Both the total original size and ZIP size must fit the upload limit.
-The browser uses this endpoint when multiple files are dropped. A failed ZIP upload is
-retried as a whole. The configured ClamAV prescan checks the completed ZIP.
+The browser uses this endpoint when multiple files are selected or dropped at once.
+Each new selection or drop starts a separate upload. A failed ZIP upload is retried
+as a whole. The configured ClamAV prescan checks the completed ZIP.
 
 For independent files instead, POST multipart to `{{BaseUrl}}/`. That endpoint returns
 per-file metadata in JSON or one URL per line. A custom `Token` then requires one file,

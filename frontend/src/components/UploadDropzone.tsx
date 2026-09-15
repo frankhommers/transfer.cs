@@ -249,7 +249,10 @@ export function UploadDropzone() {
             <p className="text-sm text-muted-foreground">
               or click to select files
             </p>
-            <p className="text-xs text-muted-foreground">Multiple files are combined into one ZIP with one download link.</p>
+            <p className="text-xs text-muted-foreground">
+              Multiple files selected or dropped at once are combined into one ZIP with one download link.
+            </p>
+            <p className="text-xs text-muted-foreground">Separate uploads get separate links.</p>
           </div>
         )}
       </div>
