@@ -1,3 +1,11 @@
+---
+name: transfer-cs
+description: >-
+  Share files through a transfer.cs instance. Use for uploading and downloading
+  files, combining files sent together into one ZIP, and managing existing uploads
+  through private administration links.
+---
+
 # {{Title}}
 
 File sharing service at {{BaseUrl}}
