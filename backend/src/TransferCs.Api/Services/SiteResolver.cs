@@ -82,6 +82,7 @@ public sealed partial class SiteResolver
   private static TransferCsOptions CreateEffectiveOptions(TransferCsOptions global, SiteOptions site) => new()
   {
     Title = site.Title ?? global.Title,
+    SkillName = site.SkillName ?? global.SkillName,
     Provider = global.Provider,
     BasePath = global.BasePath,
     TempPath = global.TempPath,

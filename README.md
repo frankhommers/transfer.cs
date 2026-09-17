@@ -299,7 +299,10 @@ from `Sunset` instead of `X-Remaining-Days`.
 ### AI Agent Integration
 
 Every instance serves a dynamic `/SKILL.md` with instance-specific usage instructions,
-base URL, available headers, and limits. Point your AI agent at it:
+base URL, available headers, and limits. Its YAML frontmatter includes a skill name and
+description. Configure the name with `TransferCs__SkillName`, for example `company-transfers`;
+the default is `transfer-cs`. Choose distinct names when installing skills from multiple
+instances. In multi-site mode, each site can override `SkillName`. Point your AI agent at it:
 
 ```bash
 curl https://transfer.example.com/SKILL.md
@@ -313,6 +316,7 @@ implementation is the local filesystem.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TransferCs__Title` | `transfer.cs` | Instance title shown in the UI |
+| `TransferCs__SkillName` | `transfer-cs` | Skill name in `/SKILL.md`; 1–64 lowercase letters/digits with single separating hyphens |
 | `TransferCs__BaseUrl` | *(request URL)* | Absolute public base URL used in generated links; when empty, derive it from the request |
 | `TransferCs__BasePath` | `./data` app; `/data` container | Local payload and metadata directory |
 | `TransferCs__TempPath` | System temp; `/tmp` container | Temporary directory for uploads, multipart bodies, ZIPs, encryption/decryption, bundles, and scans |
@@ -412,6 +416,7 @@ at a reverse proxy.
       "public": {
         "Hosts": ["transfer.example.com"],
         "Title": "Public transfers",
+        "SkillName": "public-transfers",
         "BaseUrl": "https://transfer.example.com",
         "DataDirectory": "public",
         "PurgeDays": 14,
@@ -421,6 +426,7 @@ at a reverse proxy.
       "internal": {
         "Hosts": ["send.internal.example.com"],
         "Title": "Internal transfers",
+        "SkillName": "internal-transfers",
         "DataDirectory": "internal",
         "PurgeDays": 3,
         "MaxUploadSizeKb": 10485760
@@ -439,10 +445,11 @@ environment:
   TransferCs__Sites__public__Hosts__0: transfer.example.com
   TransferCs__Sites__public__DataDirectory: public
   TransferCs__Sites__public__BaseUrl: https://transfer.example.com
+  TransferCs__Sites__public__SkillName: public-transfers
 ```
 
 Each site requires at least one `Hosts` entry. `DataDirectory` is site-specific and
-defaults to the site ID. `Title`, `BaseUrl`, `PurgeDays`, `MaxUploadSizeKb`, and
+defaults to the site ID. `Title`, `SkillName`, `BaseUrl`, `PurgeDays`, `MaxUploadSizeKb`, and
 `RandomTokenLength` may override global defaults. Other settings, including
 `PurgeIntervalHours`, authentication, IP controls, scanning, and temporary storage,
 remain global.

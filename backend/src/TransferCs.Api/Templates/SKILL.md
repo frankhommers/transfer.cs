@@ -1,5 +1,5 @@
 ---
-name: transfer-cs
+name: "{{SkillName}}"
 description: >-
   Share files through a transfer.cs instance. Use for uploading and downloading
   files, combining files sent together into one ZIP, and managing existing uploads

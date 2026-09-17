@@ -35,6 +35,7 @@ public static class SkillEndpoints
       : "disabled";
 
     string content = _skillTemplate
+      .Replace("{{SkillName}}", options.SkillName)
       .Replace("{{Title}}", options.Title)
       .Replace("{{BaseUrl}}", baseUrl)
       .Replace("{{MaxUploadSize}}", maxUploadSize)

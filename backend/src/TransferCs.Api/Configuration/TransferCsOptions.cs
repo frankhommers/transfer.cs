@@ -5,6 +5,7 @@ public class TransferCsOptions
   public const string SectionName = "TransferCs";
 
   public string Title { get; set; } = "transfer.cs";
+  public string SkillName { get; set; } = "transfer-cs";
   public string Provider { get; set; } = "local";
   public string BasePath { get; set; } = "./data";
   public string TempPath { get; set; } = Path.GetTempPath();
