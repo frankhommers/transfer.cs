@@ -6,6 +6,9 @@ public class TransferCsOptions
 
   public string Title { get; set; } = "transfer.cs";
   public string SkillName { get; set; } = "transfer-cs";
+  public string SkillDescription { get; set; } =
+    "Share files through this service and return download links. Upload files individually " +
+    "or together as one ZIP, and manage existing uploads using their private links.";
   public string Provider { get; set; } = "local";
   public string BasePath { get; set; } = "./data";
   public string TempPath { get; set; } = Path.GetTempPath();

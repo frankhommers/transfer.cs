@@ -300,9 +300,32 @@ from `Sunset` instead of `X-Remaining-Days`.
 
 Every instance serves a dynamic `/SKILL.md` with instance-specific usage instructions,
 base URL, available headers, and limits. Its YAML frontmatter includes a skill name and
-description. Configure the name with `TransferCs__SkillName`, for example `company-transfers`;
-the default is `transfer-cs`. Choose distinct names when installing skills from multiple
-instances. In multi-site mode, each site can override `SkillName`. Point your AI agent at it:
+description. Configure these with `TransferCs__SkillName` and `TransferCs__SkillDescription`.
+The default name is `transfer-cs`. The default description puts file sharing and download
+links first:
+
+> Share files through this service and return download links. Upload files individually
+> or together as one ZIP, and manage existing uploads using their private links.
+
+Choose distinct names and descriptions when installing skills from multiple instances so
+agents can select the intended service.
+
+```yaml
+environment:
+  TransferCs__SkillName: company-transfers
+  TransferCs__SkillDescription: >-
+    Share temporary files with the internal project team and return download links.
+```
+
+In multi-site mode, each site can override `SkillName` and `SkillDescription` independently.
+Omitted overrides inherit the global value. Empty descriptions are rejected at startup;
+omit the setting to use the default or inherited description. Descriptions must contain
+1–1024 characters of plain text without angle brackets or control characters other than
+tabs and line breaks. Quotes, Unicode, and multiline text are supported; line endings are
+normalized to LF in `/SKILL.md`. Invalid names or descriptions report their configuration
+path when startup fails. See the JSON and Compose examples under multi-site configuration.
+
+Point your AI agent at the served skill:
 
 ```bash
 curl https://transfer.example.com/SKILL.md
@@ -317,6 +340,7 @@ implementation is the local filesystem.
 |----------|---------|-------------|
 | `TransferCs__Title` | `transfer.cs` | Instance title shown in the UI |
 | `TransferCs__SkillName` | `transfer-cs` | Skill name in `/SKILL.md`; 1–64 lowercase letters/digits with single separating hyphens |
+| `TransferCs__SkillDescription` | Built-in file sharing description | Plain-text skill description in `/SKILL.md`; 1–1024 characters; supports a per-site override |
 | `TransferCs__BaseUrl` | *(request URL)* | Absolute public base URL used in generated links; when empty, derive it from the request |
 | `TransferCs__BasePath` | `./data` app; `/data` container | Local payload and metadata directory |
 | `TransferCs__TempPath` | System temp; `/tmp` container | Temporary directory for uploads, multipart bodies, ZIPs, encryption/decryption, bundles, and scans |
@@ -417,6 +441,7 @@ at a reverse proxy.
         "Hosts": ["transfer.example.com"],
         "Title": "Public transfers",
         "SkillName": "public-transfers",
+        "SkillDescription": "Share files publicly and return download links.",
         "BaseUrl": "https://transfer.example.com",
         "DataDirectory": "public",
         "PurgeDays": 14,
@@ -427,6 +452,7 @@ at a reverse proxy.
         "Hosts": ["send.internal.example.com"],
         "Title": "Internal transfers",
         "SkillName": "internal-transfers",
+        "SkillDescription": "Share temporary files with the internal project team.",
         "DataDirectory": "internal",
         "PurgeDays": 3,
         "MaxUploadSizeKb": 10485760
@@ -446,10 +472,11 @@ environment:
   TransferCs__Sites__public__DataDirectory: public
   TransferCs__Sites__public__BaseUrl: https://transfer.example.com
   TransferCs__Sites__public__SkillName: public-transfers
+  TransferCs__Sites__public__SkillDescription: Share files publicly and return download links.
 ```
 
 Each site requires at least one `Hosts` entry. `DataDirectory` is site-specific and
-defaults to the site ID. `Title`, `SkillName`, `BaseUrl`, `PurgeDays`, `MaxUploadSizeKb`, and
+defaults to the site ID. `Title`, `SkillName`, `SkillDescription`, `BaseUrl`, `PurgeDays`, `MaxUploadSizeKb`, and
 `RandomTokenLength` may override global defaults. Other settings, including
 `PurgeIntervalHours`, authentication, IP controls, scanning, and temporary storage,
 remain global.

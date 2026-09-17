@@ -20,7 +20,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Configuration
 builder.Services.Configure<TransferCsOptions>(builder.Configuration.GetSection(TransferCsOptions.SectionName));
-builder.Services.AddSingleton<IValidateOptions<TransferCsOptions>, SkillNameValidator>();
+builder.Services.AddSingleton<IValidateOptions<TransferCsOptions>, SkillMetadataValidator>();
 builder.Services.AddOptions<TransferCsOptions>()
   .Validate(options => options.MinFreeDiskSpaceMb is >= 0 and <= long.MaxValue / (1024 * 1024),
     "TransferCs:MinFreeDiskSpaceMb must be a non-negative number of MiB within the supported range.")

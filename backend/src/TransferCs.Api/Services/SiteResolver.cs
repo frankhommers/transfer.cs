@@ -83,6 +83,7 @@ public sealed partial class SiteResolver
   {
     Title = site.Title ?? global.Title,
     SkillName = site.SkillName ?? global.SkillName,
+    SkillDescription = site.SkillDescription ?? global.SkillDescription,
     Provider = global.Provider,
     BasePath = global.BasePath,
     TempPath = global.TempPath,

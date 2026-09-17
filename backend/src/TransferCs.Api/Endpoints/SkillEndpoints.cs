@@ -41,7 +41,8 @@ public static class SkillEndpoints
       .Replace("{{MaxUploadSize}}", maxUploadSize)
       .Replace("{{MinFreeDiskSpace}}", options.MinFreeDiskSpaceMb > 0
         ? $"{options.MinFreeDiskSpaceMb} MiB" : "disabled")
-      .Replace("{{PurgeDays}}", purgeDays);
+      .Replace("{{PurgeDays}}", purgeDays)
+      .Replace("{{SkillDescription}}", FormatYamlBlock(options.SkillDescription));
 
     return Results.Text(content, "text/markdown; charset=utf-8");
   }
@@ -76,5 +77,13 @@ public static class SkillEndpoints
   {
     string templatePath = Path.Combine(AppContext.BaseDirectory, "Templates", name);
     return File.ReadAllText(templatePath);
+  }
+
+  private static string FormatYamlBlock(string value)
+  {
+    string normalized = value.ReplaceLineEndings("\n");
+    bool trailingNewline = normalized.EndsWith('\n');
+    string content = trailingNewline ? normalized[..^1] : normalized;
+    return (trailingNewline ? "|2+\n  " : "|2-\n  ") + content.Replace("\n", "\n  ");
   }
 }
