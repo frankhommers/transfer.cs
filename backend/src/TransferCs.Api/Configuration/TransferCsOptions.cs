@@ -20,6 +20,9 @@ public class TransferCsOptions
   public int RandomTokenLength { get; set; } = 10;
   public bool DownloadLogEnabled { get; set; }
   public int DownloadLogMaxEntries { get; set; } = 50;
+  public int DownloadPasswordMaxAttempts { get; set; } = 50;
+  public int DownloadPasswordAttemptWindowMinutes { get; set; } = 15;
+  public int DownloadPasswordUnlockHours { get; set; } = 12;
   public bool ForceHttps { get; set; }
   public string EmailContact { get; set; } = "";
   public string ClamAvHost { get; set; } = "";

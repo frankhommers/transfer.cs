@@ -11,4 +11,7 @@ public class SiteOptions
   public int? PurgeDays { get; set; }
   public long? MaxUploadSizeKb { get; set; }
   public int? RandomTokenLength { get; set; }
+  public int? DownloadPasswordMaxAttempts { get; set; }
+  public int? DownloadPasswordAttemptWindowMinutes { get; set; }
+  public int? DownloadPasswordUnlockHours { get; set; }
 }

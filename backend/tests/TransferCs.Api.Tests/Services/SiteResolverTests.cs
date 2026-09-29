@@ -64,6 +64,31 @@ public class SiteResolverTests
     Assert.Equal("Legacy", site.Options.Title);
   }
 
+  [Fact]
+  public void Resolve_MergesDownloadPasswordOverrides()
+  {
+    TransferCsOptions options = CreateOptions();
+    options.DownloadPasswordMaxAttempts = 7;
+    options.DownloadPasswordAttemptWindowMinutes = 8;
+    options.DownloadPasswordUnlockHours = 9;
+    options.Sites["beta"] = new SiteOptions
+    {
+      Hosts = ["beta.test"],
+      DownloadPasswordMaxAttempts = 0,
+      DownloadPasswordAttemptWindowMinutes = 2,
+      DownloadPasswordUnlockHours = 3
+    };
+    SiteResolver resolver = new(Options.Create(options));
+
+    TransferCsOptions alpha = resolver.Resolve("files.example.test")!.Options;
+    TransferCsOptions beta = resolver.Resolve("beta.test")!.Options;
+
+    Assert.Equal((7, 8, 9),
+      (alpha.DownloadPasswordMaxAttempts, alpha.DownloadPasswordAttemptWindowMinutes, alpha.DownloadPasswordUnlockHours));
+    Assert.Equal((0, 2, 3),
+      (beta.DownloadPasswordMaxAttempts, beta.DownloadPasswordAttemptWindowMinutes, beta.DownloadPasswordUnlockHours));
+  }
+
   private static TransferCsOptions CreateOptions() => new()
   {
     MinFreeDiskSpaceMb = 5120,

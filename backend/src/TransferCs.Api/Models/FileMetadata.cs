@@ -36,6 +36,14 @@ public class FileMetadata
   [JsonPropertyName("DecryptedContentType")]
   public string DecryptedContentType { get; set; } = "";
 
+  /// <summary>
+  /// PBKDF2 hash of the download password as <c>pbkdf2-sha256$iterations$salt$hash</c>.
+  /// Empty when the upload is not password protected.
+  /// </summary>
+  [JsonPropertyName("PasswordHash")] public string PasswordHash { get; set; } = "";
+
+  [JsonIgnore] public bool PasswordProtected => !string.IsNullOrEmpty(PasswordHash);
+
   public bool IsMaxDownloadsExpired => MaxDownloads != -1 && Downloads >= MaxDownloads;
   public bool IsMaxDateExpired => MaxDate != DateTime.MinValue && DateTime.UtcNow > MaxDate;
 

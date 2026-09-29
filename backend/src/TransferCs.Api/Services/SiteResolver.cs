@@ -95,6 +95,10 @@ public sealed partial class SiteResolver
     RandomTokenLength = site.RandomTokenLength ?? global.RandomTokenLength,
     DownloadLogEnabled = global.DownloadLogEnabled,
     DownloadLogMaxEntries = global.DownloadLogMaxEntries,
+    DownloadPasswordMaxAttempts = site.DownloadPasswordMaxAttempts ?? global.DownloadPasswordMaxAttempts,
+    DownloadPasswordAttemptWindowMinutes =
+      site.DownloadPasswordAttemptWindowMinutes ?? global.DownloadPasswordAttemptWindowMinutes,
+    DownloadPasswordUnlockHours = site.DownloadPasswordUnlockHours ?? global.DownloadPasswordUnlockHours,
     ForceHttps = global.ForceHttps,
     EmailContact = global.EmailContact,
     ClamAvHost = global.ClamAvHost,
