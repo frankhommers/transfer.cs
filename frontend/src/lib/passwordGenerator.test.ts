@@ -4,9 +4,10 @@ import {generatePassword, passwordAlphabet} from './passwordGenerator'
 const forbidden = '1lI!|¦0OoØ2Zz5Ss6b8B9g.,-_`\'"/;{}()[]rnmvw\\><&$'
 
 describe('generatePassword', () => {
-  it('excludes ambiguous and shell-unsafe characters from the alphabet', () => {
+  it('uses only letters and digits without look-alikes', () => {
     for (const char of forbidden) expect(passwordAlphabet).not.toContain(char)
-    expect(passwordAlphabet).toHaveLength(49)
+    expect(passwordAlphabet).toMatch(/^[A-Za-z0-9]+$/)
+    expect(passwordAlphabet).toHaveLength(39)
     expect(new Set(passwordAlphabet).size).toBe(passwordAlphabet.length)
   })
 

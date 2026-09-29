@@ -193,8 +193,8 @@ counter for the file. Upload with the header instead when the file must never be
 unprotected, even briefly.
 
 In the browser, check "Protect uploads with password" below the drop area before uploading;
-the field suggests a random password with a length slider (8 to 32) that avoids ambiguous
-and shell-unsafe characters, and typed passwords are unrestricted. Every upload result shows
+the field suggests a random password with a length slider (8 to 32) made of letters and
+digits without look-alikes, and typed passwords are unrestricted. Every upload result shows
 "Password protected" or "No password"; the badge opens the private admin page, where the
 password can be set, changed or removed later. Link and password are copied separately, so
 they can be shared over different channels.

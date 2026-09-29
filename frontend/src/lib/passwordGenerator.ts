@@ -1,4 +1,4 @@
-export const passwordAlphabet = 'acdefhijkpqtuxyACDEFGHJKLMNPQRTUVWXY347#%*+:=?@^~'
+export const passwordAlphabet = 'acdefhijkpqtuxyACDEFGHJKLMNPQRTUVWXY347'
 export const minPasswordLength = 8
 export const maxPasswordLength = 32
 export const defaultPasswordLength = 16

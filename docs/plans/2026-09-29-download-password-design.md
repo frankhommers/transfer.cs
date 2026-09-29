@@ -117,8 +117,8 @@ unprotected window.
   An empty or too long password blocks the dropzone. No helper paragraphs.
 - The password field has show/hide, copy and "suggest" icons inside the input and a compact
   length slider (8-32, default 16) showing only the number; moving the slider or clicking
-  suggest regenerates it. Suggested passwords avoid
-  `1lI!|¦0OoØ2Zz5Ss6b8B9g.,-_`'"/;{}()[]rnmvw\><&$`; typed passwords are unrestricted.
+  suggest regenerates it. Suggested passwords use only `A-Za-z0-9` without the look-alikes
+  `1lI0Oo2Zz5Ss6b8B9grnmvw` (39 characters); typed passwords are unrestricted.
 - Every successful upload result shows its status: "Password protected" (lock) or
   "No password" (open lock). The badge links to the file's private admin page, which is the
   single place to set, change or remove a password after upload. There is no per-result
