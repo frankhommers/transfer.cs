@@ -1,10 +1,12 @@
 import {useState, useCallback, useRef} from 'react'
 import {useDropzone} from 'react-dropzone'
-import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockKeyhole, Eye, EyeOff} from 'lucide-react'
+import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockKeyhole, Eye, EyeOff, Dices} from 'lucide-react'
 import {Progress} from '@/components/ui/progress'
 import {Button} from '@/components/ui/button'
 import {Input} from '@/components/ui/input'
 import {Badge} from '@/components/ui/badge'
+import {Slider} from '@/components/ui/slider'
+import {defaultPasswordLength, generatePassword, maxPasswordLength as maxGeneratedPasswordLength, minPasswordLength} from '@/lib/passwordGenerator'
 import {cn} from '@/lib/utils'
 
 interface UploadResult {
@@ -148,6 +150,8 @@ export function UploadDropzone() {
   const [protect, setProtect] = useState(false)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [passwordLength, setPasswordLength] = useState(defaultPasswordLength)
+  const [copiedPassword, setCopiedPassword] = useState(false)
   const passwordError = protect ? validatePassword(password) : null
   const uploadPassword = protect && !passwordError ? password : undefined
 
@@ -232,6 +236,28 @@ export function UploadDropzone() {
     setTimeout(() => setCopiedAdminIndex(null), 2000)
   }
 
+  const suggestPassword = (length: number) => {
+    setPassword(generatePassword(length))
+    setShowPassword(true)
+  }
+
+  const handleProtectChange = (checked: boolean) => {
+    setProtect(checked)
+    if (checked && !password) suggestPassword(passwordLength)
+  }
+
+  const handleLengthChange = (value: number | readonly number[]) => {
+    const length = Array.isArray(value) ? value[0] : value as number
+    setPasswordLength(length)
+    suggestPassword(length)
+  }
+
+  const handleCopyPassword = async () => {
+    await copyToClipboard(password)
+    setCopiedPassword(true)
+    setTimeout(() => setCopiedPassword(false), 2000)
+  }
+
   const handleCopyWithPassword = async (result: UploadResult, index: number) => {
     await copyToClipboard(`${result.url}\nPassword: ${result.password ?? ''}`)
     setCopiedPasswordIndex(index)
@@ -299,7 +325,7 @@ export function UploadDropzone() {
             className="accent-primary"
             checked={protect}
             disabled={uploading}
-            onChange={(e) => setProtect(e.target.checked)}
+            onChange={(e) => handleProtectChange(e.target.checked)}
           />
           <Lock className="h-4 w-4 text-muted-foreground"/>
           Protect with password
@@ -327,6 +353,40 @@ export function UploadDropzone() {
               >
                 {showPassword ? <EyeOff/> : <Eye/>}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleCopyPassword}
+                disabled={!password}
+                aria-label="Copy password"
+                title="Copy password"
+              >
+                {copiedPassword ? <Check/> : <Copy/>}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => suggestPassword(passwordLength)}
+                disabled={uploading}
+                aria-label="Suggest password"
+                title="Suggest password"
+              >
+                <Dices/>
+              </Button>
+            </div>
+            <div className="flex max-w-sm items-center gap-3 py-1">
+              <span className="w-20 shrink-0 text-xs text-muted-foreground">Length: {passwordLength}</span>
+              <Slider
+                value={[passwordLength]}
+                min={minPasswordLength}
+                max={maxGeneratedPasswordLength}
+                step={1}
+                onValueChange={handleLengthChange}
+                disabled={uploading}
+                aria-label="Suggested password length"
+              />
             </div>
             <p className={cn('text-xs', passwordError && password !== '' ? 'text-destructive' : 'text-muted-foreground')}>
               {passwordError ?? 'Recipients need this password to download. Share it separately from the link.'}
