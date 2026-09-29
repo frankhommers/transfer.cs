@@ -7,6 +7,8 @@ namespace TransferCs.Api.Models;
 [JsonSerializable(typeof(ScanResult))]
 [JsonSerializable(typeof(VirusTotalResult))]
 [JsonSerializable(typeof(PreviewResult))]
+[JsonSerializable(typeof(LockedPreviewResult))]
+[JsonSerializable(typeof(UnlockRequest))]
 [JsonSerializable(typeof(PublicConfig))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(AdminMetadata))]

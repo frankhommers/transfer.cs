@@ -20,12 +20,13 @@ public static class DownloadEndpoints
         HttpResponse response,
         IStorageProvider storage,
         MetadataService metadataService,
-        IOptions<TransferCsOptions> optionsAccessor,
+        DownloadAuthorizer authorizer,
         CancellationToken ct) =>
       {
         if (!IsValidAction(action))
           return Results.NotFound();
-        return await HandleHeadAsync(token, filename, request, response, storage, metadataService, optionsAccessor, ct);
+        return await HandleHeadAsync(action, token, filename, request, response, storage, metadataService,
+          authorizer, ct);
       });
 
     app.MapMethods("/{action}/{token}/{filename}",
@@ -37,12 +38,13 @@ public static class DownloadEndpoints
         MetadataService metadataService,
         IOptions<TransferCsOptions> optionsAccessor,
         EncryptionService encryption,
+        DownloadAuthorizer authorizer,
         CancellationToken ct) =>
       {
         if (!IsValidAction(action))
           return Results.NotFound();
         return await HandleGetAsync(action, token, filename, request, response, storage, metadataService, optionsAccessor,
-          encryption, ct);
+          encryption, authorizer, ct);
       });
 
     app.MapMethods("/{token}/{filename}",
@@ -52,9 +54,9 @@ public static class DownloadEndpoints
           HttpResponse response,
           IStorageProvider storage,
           MetadataService metadataService,
-          IOptions<TransferCsOptions> optionsAccessor,
+          DownloadAuthorizer authorizer,
           CancellationToken ct) =>
-        HandleHeadAsync(token, filename, request, response, storage, metadataService, optionsAccessor, ct));
+        HandleHeadAsync(null, token, filename, request, response, storage, metadataService, authorizer, ct));
 
     app.MapGet("/{token}/{filename}",
       (string token, string filename,
@@ -64,8 +66,10 @@ public static class DownloadEndpoints
           MetadataService metadataService,
           IOptions<TransferCsOptions> optionsAccessor,
           EncryptionService encryption,
+          DownloadAuthorizer authorizer,
           CancellationToken ct) =>
-        HandleGetAsync("get", token, filename, request, response, storage, metadataService, optionsAccessor, encryption, ct));
+        HandleGetAsync(null, token, filename, request, response, storage, metadataService, optionsAccessor, encryption,
+          authorizer, ct));
 
     return app;
   }
@@ -81,18 +85,22 @@ public static class DownloadEndpoints
   /// That makes it the cheap way to read the checksum without pulling the payload.
   /// </summary>
   private static async Task<IResult> HandleHeadAsync(
+    string? action,
     string token,
     string filename,
     HttpRequest request,
     HttpResponse response,
     IStorageProvider storage,
     MetadataService metadataService,
-    IOptions<TransferCsOptions> optionsAccessor,
+    DownloadAuthorizer authorizer,
     CancellationToken ct)
   {
     FileMetadata? metadata = await metadataService.CheckAndLoadAsync(token, filename, false, ct);
     if (metadata == null)
       return Results.NotFound();
+    DownloadAuthorizationResult access = authorizer.Authorize(request, token, filename, metadata);
+    if (!access.IsAllowed)
+      return DownloadAccessResults.DeniedDownload(request, access, action, token, filename);
 
     try
     {
@@ -123,7 +131,7 @@ public static class DownloadEndpoints
   }
 
   private static async Task<IResult> HandleGetAsync(
-    string action,
+    string? action,
     string token,
     string filename,
     HttpRequest request,
@@ -132,6 +140,7 @@ public static class DownloadEndpoints
     MetadataService metadataService,
     IOptions<TransferCsOptions> optionsAccessor,
     EncryptionService encryption,
+    DownloadAuthorizer authorizer,
     CancellationToken ct)
   {
     if (request.Headers.ContainsKey("X-Decrypt-Password"))
@@ -140,6 +149,9 @@ public static class DownloadEndpoints
     FileMetadata? initialMetadata = await metadataService.CheckAndLoadAsync(token, filename, false, ct);
     if (initialMetadata == null)
       return Results.NotFound();
+    DownloadAuthorizationResult access = authorizer.Authorize(request, token, filename, initialMetadata);
+    if (!access.IsAllowed)
+      return DownloadAccessResults.DeniedDownload(request, access, action, token, filename);
 
     try
     {

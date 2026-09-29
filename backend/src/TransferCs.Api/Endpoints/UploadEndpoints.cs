@@ -22,9 +22,11 @@ public static class UploadEndpoints
   private static readonly string[] _removedHeaders =
     ["Expires", "Max-Days", "Expected-Checksum", "X-Expected-Checksum", "X-Token", "X-Encrypt-Password"];
 
-  private static IResult? ValidateUploadHeaders(HttpRequest request, TransferCsOptions options, out DateTime? expiry)
+  private static IResult? ValidateUploadHeaders(HttpRequest request, TransferCsOptions options,
+    DownloadPasswordHasher hasher, out DateTime? expiry, out string passwordHash)
   {
     expiry = null;
+    passwordHash = "";
     foreach (string header in _removedHeaders)
     {
       if (request.Headers.ContainsKey(header))
@@ -43,6 +45,14 @@ public static class UploadEndpoints
     else if (options.PurgeDays > 0)
     {
       expiry = DateTime.UtcNow.AddDays(options.PurgeDays);
+    }
+
+    if (request.Headers.TryGetValue(DownloadAuthorizer.HeaderName, out StringValues downloadPassword))
+    {
+      string? passwordError = DownloadPasswordHeader.Validate(downloadPassword);
+      if (passwordError != null)
+        return Results.BadRequest(passwordError);
+      passwordHash = hasher.Hash(downloadPassword.ToString());
     }
 
     return null;
@@ -68,11 +78,13 @@ public static class UploadEndpoints
     SiteContext siteContext,
     DiskSpaceGuard diskSpace,
     EncryptionService encryption,
+    DownloadPasswordHasher hasher,
     CancellationToken ct)
   {
     TransferCsOptions options = siteContext.Site.Options;
     string sanitized = SanitizeHelper.SanitizeFilename(filename);
-    IResult? headerError = ValidateUploadHeaders(request, options, out DateTime? expiry);
+    IResult? headerError = ValidateUploadHeaders(request, options, hasher, out DateTime? expiry,
+      out string passwordHash);
     if (headerError != null)
       return headerError;
 
@@ -112,7 +124,7 @@ public static class UploadEndpoints
         return Results.BadRequest(
           $"Checksum mismatch: expected sha256:{expectedChecksum}, got sha256:{sha256}.");
 
-      return await StoreUploadAsync(sanitized, tempPath, contentLength, sha256, expiry,
+      return await StoreUploadAsync(sanitized, tempPath, contentLength, sha256, expiry, passwordHash,
         request, storage, metadataService, options, encryption, ct);
     }
     finally
@@ -128,6 +140,7 @@ public static class UploadEndpoints
     long contentLength,
     string sha256,
     DateTime? expiry,
+    string passwordHash,
     HttpRequest request,
     IStorageProvider storage,
     MetadataService metadataService,
@@ -171,7 +184,8 @@ public static class UploadEndpoints
         DeletionToken = deletionToken,
         AdminToken = adminToken,
         // Hash the file or generated ZIP before encryption; PGP output is not deterministic.
-        Sha256 = sha256
+        Sha256 = sha256,
+        PasswordHash = passwordHash
       };
 
       ApplyLifetime(metadata, request, expiry);
@@ -199,7 +213,9 @@ public static class UploadEndpoints
       string url = UrlHelper.ResolveUrl(request, $"/{reservedToken}/{escapedFilename}", options);
       string deleteUrl = UrlHelper.ResolveUrl(request, $"/{reservedToken}/{escapedFilename}/{deletionToken}", options);
       string adminUrl = UrlHelper.ResolveUrl(request, $"/admin/{reservedToken}/{escapedFilename}", options) + $"#{adminToken}";
-      return new UploadResult([new UploadedFile(sanitized, url, deleteUrl, adminUrl, sha256, expiry)]);
+      return new UploadResult([
+        new UploadedFile(sanitized, url, deleteUrl, adminUrl, sha256, expiry, metadata.PasswordProtected)
+      ]);
     }
     finally
     {
@@ -222,10 +238,12 @@ public static class UploadEndpoints
     SiteContext siteContext,
     DiskSpaceGuard diskSpace,
     EncryptionService encryption,
+    DownloadPasswordHasher hasher,
     CancellationToken ct)
   {
     TransferCsOptions options = siteContext.Site.Options;
-    IResult? headerError = ValidateUploadHeaders(request, options, out DateTime? expiry);
+    IResult? headerError = ValidateUploadHeaders(request, options, hasher, out DateTime? expiry,
+      out string passwordHash);
     if (headerError != null)
       return headerError;
     if (request.Headers.ContainsKey("Content-Digest") || request.Headers.ContainsKey("Encrypt-Password"))
@@ -256,7 +274,7 @@ public static class UploadEndpoints
         sha256 = await ChecksumHelper.ComputeSha256Async(archiveStream, ct);
       }
 
-      return await StoreUploadAsync("files.zip", tempPath, contentLength, sha256, expiry,
+      return await StoreUploadAsync("files.zip", tempPath, contentLength, sha256, expiry, passwordHash,
         request, storage, metadataService, options, encryption, ct);
     }
     finally
@@ -272,10 +290,12 @@ public static class UploadEndpoints
     MetadataService metadataService,
     SiteContext siteContext,
     DiskSpaceGuard diskSpace,
+    DownloadPasswordHasher hasher,
     CancellationToken ct)
   {
     TransferCsOptions options = siteContext.Site.Options;
-    IResult? headerError = ValidateUploadHeaders(request, options, out DateTime? expiry);
+    IResult? headerError = ValidateUploadHeaders(request, options, hasher, out DateTime? expiry,
+      out string passwordHash);
     if (headerError != null)
       return headerError;
     if (request.Headers.ContainsKey("Content-Digest") || request.Headers.ContainsKey("Encrypt-Password"))
@@ -330,7 +350,8 @@ public static class UploadEndpoints
             ContentType = contentType,
             ContentLength = file.Length,
             DeletionToken = deletionToken,
-            AdminToken = adminToken
+            AdminToken = adminToken,
+            PasswordHash = passwordHash
           };
 
           ApplyLifetime(metadata, request, expiry);
@@ -352,7 +373,7 @@ public static class UploadEndpoints
           string adminUrl = UrlHelper.ResolveUrl(request, $"/admin/{reservedToken}/{escapedFilename}", options) +
                             $"#{adminToken}";
           uploadedFiles.Add(new UploadedFile(sanitized, url, deleteUrl, adminUrl, metadata.Sha256,
-            expiry));
+            expiry, metadata.PasswordProtected));
         }
         finally
         {

@@ -37,7 +37,7 @@ public static class ViewEndpoints
     HandleApplication(context.Request, context.RequestServices.GetRequiredService<IndexHtmlProvider>(),
       context.RequestServices.GetRequiredService<SiteContext>()).ExecuteAsync(context);
 
-  private static IResult HandleApplication(HttpRequest request, IndexHtmlProvider indexHtml, SiteContext siteContext)
+  internal static IResult HandleApplication(HttpRequest request, IndexHtmlProvider indexHtml, SiteContext siteContext)
   {
     string? html = indexHtml.Render(siteContext.Site.Options.Title);
     if (html == null)
@@ -73,12 +73,15 @@ public static class ViewEndpoints
                     Options:
                       Max-Downloads: 1              Maximum number of downloads
                       File-Lifetime: 7d                   Expires in 7 days (supports: 1d12h, 30m, 3600s, or a date)
+                      Download-Password: secret           Require this password to download
 
                     Examples:
                       curl --upload-file ./hello.txt {baseUrl}/hello.txt
                       curl -H "File-Lifetime: 7d" --upload-file ./hello.txt {baseUrl}/hello.txt
                       curl -H "File-Lifetime: 1d12h" --upload-file ./hello.txt {baseUrl}/hello.txt
                       curl -H "Max-Downloads: 1" --upload-file ./hello.txt {baseUrl}/hello.txt
+                      curl -H "Download-Password: secret" --upload-file ./hello.txt {baseUrl}/hello.txt
+                      curl -H "Download-Password: secret" {baseUrl}/<token>/hello.txt -o hello.txt
                     """;
 
     return Results.Text(usage, "text/plain");

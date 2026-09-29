@@ -36,6 +36,7 @@ public static class AdminEndpoints
       ContentLength = metadata.ContentLength,
       ContentType = metadata.ContentType,
       Sha256 = metadata.Sha256,
+      PasswordProtected = metadata.PasswordProtected,
       Downloads = metadata.Downloads,
       MaxDownloads = metadata.MaxDownloads,
       MaxDate = metadata.MaxDate,

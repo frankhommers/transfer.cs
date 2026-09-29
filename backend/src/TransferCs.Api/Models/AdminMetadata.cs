@@ -6,6 +6,7 @@ public class AdminMetadata
   public long ContentLength { get; set; }
   public string ContentType { get; set; } = "";
   public string Sha256 { get; set; } = "";
+  public bool PasswordProtected { get; set; }
   public int Downloads { get; set; }
   public int MaxDownloads { get; set; }
   public DateTime MaxDate { get; set; }

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using TransferCs.Api.Configuration;
 using TransferCs.Api.Endpoints;
@@ -21,6 +22,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // Configuration
 builder.Services.Configure<TransferCsOptions>(builder.Configuration.GetSection(TransferCsOptions.SectionName));
 builder.Services.AddSingleton<IValidateOptions<TransferCsOptions>, SkillMetadataValidator>();
+builder.Services.AddSingleton<IValidateOptions<TransferCsOptions>, DownloadPasswordOptionsValidator>();
 builder.Services.AddOptions<TransferCsOptions>()
   .Validate(options => options.MinFreeDiskSpaceMb is >= 0 and <= long.MaxValue / (1024 * 1024),
     "TransferCs:MinFreeDiskSpaceMb must be a non-negative number of MiB within the supported range.")
@@ -45,6 +47,10 @@ builder.Services.AddSingleton<EncryptionService>();
 builder.Services.AddSingleton<SiteStorageFactory>();
 builder.Services.AddSingleton<SiteDataMigration>();
 builder.Services.AddSingleton<KeyedLock>();
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddSingleton(_ => new DownloadPasswordHasher());
+builder.Services.AddSingleton<DownloadPasswordAttemptLimiter>();
+builder.Services.AddScoped<DownloadAuthorizer>();
 builder.Services.AddScoped<SiteContext>();
 builder.Services.AddScoped<IStorageProvider>(services =>
   services.GetRequiredService<SiteStorageFactory>().Get(services.GetRequiredService<SiteContext>().Site));
@@ -143,6 +149,7 @@ app.MapDeleteEndpoints();
 app.MapBundleEndpoints();
 app.MapScanEndpoints();
 app.MapPreviewEndpoints();
+app.MapUnlockEndpoints();
 app.MapSkillEndpoints();
 app.MapAdminEndpoints();
 

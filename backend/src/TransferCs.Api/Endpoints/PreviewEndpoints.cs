@@ -17,14 +17,22 @@ public static class PreviewEndpoints
     string token,
     string filename,
     HttpRequest request,
+    HttpResponse response,
     MetadataService metadataService,
     SiteContext siteContext,
+    DownloadAuthorizer authorizer,
     CancellationToken ct)
   {
     Configuration.TransferCsOptions options = siteContext.Site.Options;
     FileMetadata? metadata = await metadataService.LoadAsync(token, filename, ct);
     if (metadata == null)
       return Results.NotFound();
+
+    // The unlocked preview depends on the unlock cookie, so a cached locked response must not be reused.
+    response.Headers.CacheControl = "no-store";
+    DownloadAuthorizationResult access = authorizer.Authorize(request, token, filename, metadata);
+    if (access.Status is DownloadAuthorizationStatus.WrongPassword or DownloadAuthorizationStatus.TooManyAttempts)
+      return DownloadAccessResults.Denied(response, access);
 
     string url = UrlHelper.ResolveUrl(request, $"/{token}/{filename}", options);
     string downloadUrl = UrlHelper.ResolveUrl(request, $"/download/{token}/{filename}", options);
@@ -39,6 +47,19 @@ public static class PreviewEndpoints
       qrCodeBase64 = Convert.ToBase64String(qrBytes);
     }
 
+    if (!access.IsAllowed)
+    {
+      return Results.Json(new LockedPreviewResult
+      {
+        Filename = filename,
+        Url = url,
+        DownloadUrl = downloadUrl,
+        Token = token,
+        Hostname = request.Host.ToString(),
+        QrCode = qrCodeBase64
+      }, AppJsonContext.Default.LockedPreviewResult);
+    }
+
     string previewType = GetPreviewType(metadata.ContentType);
 
     return Results.Json(new Models.PreviewResult
@@ -51,7 +72,8 @@ public static class PreviewEndpoints
       Hostname = request.Host.ToString(),
       ContentLength = metadata.ContentLength,
       QrCode = qrCodeBase64,
-      PreviewType = previewType
+      PreviewType = previewType,
+      PasswordProtected = metadata.PasswordProtected
     }, Models.AppJsonContext.Default.PreviewResult);
   }
 

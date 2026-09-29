@@ -8,4 +8,5 @@ public sealed record UploadedFile(
   [property: JsonPropertyName("deleteUrl")] string DeleteUrl,
   [property: JsonPropertyName("adminUrl")] string AdminUrl,
   [property: JsonPropertyName("sha256")] string Sha256,
-  [property: JsonPropertyName("expires")] DateTime? Expires);
+  [property: JsonPropertyName("expires")] DateTime? Expires,
+  [property: JsonPropertyName("passwordProtected")] bool PasswordProtected = false);

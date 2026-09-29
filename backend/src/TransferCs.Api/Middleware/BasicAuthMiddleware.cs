@@ -28,8 +28,9 @@ public class BasicAuthMiddleware
   {
     // Admin endpoints authenticate with the per-file Authorization: Bearer token. Requiring global
     // basic auth as well would turn a missing admin token into 401 instead of the intended
-    // non-enumerable 404 response.
-    if (context.Request.Path.StartsWithSegments("/api/admin"))
+    // non-enumerable 404 response. Unlocking a download is a recipient action, not an upload.
+    if (context.Request.Path.StartsWithSegments("/api/admin") ||
+        context.Request.Path.StartsWithSegments("/api/unlock"))
     {
       await _next(context);
       return;
