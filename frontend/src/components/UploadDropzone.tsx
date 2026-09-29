@@ -4,10 +4,9 @@ import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash,
 import {Progress} from '@/components/ui/progress'
 import {Button} from '@/components/ui/button'
 import {Badge} from '@/components/ui/badge'
-import {PasswordEditor} from '@/components/PasswordEditor'
 import {PasswordField} from '@/components/PasswordField'
 import {copyToClipboard} from '@/lib/clipboard'
-import {parseAdminUrl, removeDownloadPassword, setDownloadPassword, validateDownloadPassword} from '@/lib/downloadPassword'
+import {validateDownloadPassword} from '@/lib/downloadPassword'
 import {defaultPasswordLength, generatePassword} from '@/lib/passwordGenerator'
 import {cn} from '@/lib/utils'
 
@@ -25,13 +24,9 @@ interface UploadResult {
   failed: boolean
   error?: string
   retrying?: boolean
-  passwordBusy?: boolean
-  passwordError?: string
 }
 
 type UploadedFileResult = Pick<UploadResult, 'filename' | 'url' | 'deleteUrl' | 'adminUrl' | 'expires' | 'checksum' | 'passwordProtected'>
-
-type PasswordEditorTarget = {kind: 'one'; id: string} | {kind: 'all'}
 
 interface UploadProgress {
   loaded: number
@@ -66,12 +61,6 @@ function verifyCommand(result: {checksum: string; filename: string}): string {
 
 function encodeBase64(text: string) {
   return btoa(Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(''))
-}
-
-function requireAdminTarget(result: UploadResult) {
-  const target = parseAdminUrl(result.adminUrl)
-  if (!target) throw new Error('This upload has no private admin link.')
-  return target
 }
 
 function uploadFiles(
@@ -139,7 +128,6 @@ export function UploadDropzone() {
   const [copiedAll, setCopiedAll] = useState(false)
   const [protect, setProtect] = useState(false)
   const [password, setPassword] = useState('')
-  const [editor, setEditor] = useState<PasswordEditorTarget | null>(null)
   const passwordError = protect ? validateDownloadPassword(password) : null
   const uploadPassword = protect && !passwordError ? password : undefined
 
@@ -236,49 +224,6 @@ export function UploadDropzone() {
     setTimeout(() => setCopiedPasswordId(null), 2000)
   }
 
-  const updateResult = (id: string, update: Partial<UploadResult>) => {
-    setResults((prev) => prev.map((item) => item.id === id ? {...item, ...update} : item))
-  }
-
-  const applyPassword = async (result: UploadResult, newPassword: string) => {
-    await setDownloadPassword(requireAdminTarget(result), newPassword)
-    updateResult(result.id, {passwordProtected: true, password: newPassword, passwordError: undefined})
-  }
-
-  const handleApplyOne = async (result: UploadResult, newPassword: string) => {
-    await applyPassword(result, newPassword)
-    setEditor(null)
-  }
-
-  const handleApplyAll = async (newPassword: string) => {
-    const failures: string[] = []
-    for (const result of results.filter((item) => !item.failed)) {
-      try {
-        await applyPassword(result, newPassword)
-      } catch (error: unknown) {
-        failures.push(`${result.filename}: ${error instanceof Error ? error.message : 'failed'}`)
-      }
-    }
-    if (failures.length > 0) {
-      throw new Error(`Could not set the password for ${failures.length} file${failures.length === 1 ? '' : 's'}. ${failures.join('; ')}`)
-    }
-    setEditor(null)
-  }
-
-  const handleRemovePassword = async (result: UploadResult) => {
-    if (editor?.kind === 'one' && editor.id === result.id) setEditor(null)
-    updateResult(result.id, {passwordBusy: true, passwordError: undefined})
-    try {
-      await removeDownloadPassword(requireAdminTarget(result))
-      updateResult(result.id, {passwordBusy: false, passwordProtected: false, password: undefined})
-    } catch (error: unknown) {
-      updateResult(result.id, {
-        passwordBusy: false,
-        passwordError: error instanceof Error ? error.message : 'Could not remove the password.',
-      })
-    }
-  }
-
   const handleDelete = async (result: UploadResult) => {
     if (!result.deleteUrl) return
     try {
@@ -286,7 +231,6 @@ export function UploadDropzone() {
       const response = await fetch(path, {method: 'DELETE'})
       if (!response.ok) throw new Error(`Deletion failed (HTTP ${response.status})`)
       setResults((prev) => prev.filter((item) => item.id !== result.id))
-      if (editor?.kind === 'one' && editor.id === result.id) setEditor(null)
     } catch { /* ignore */
     }
   }
@@ -363,14 +307,9 @@ export function UploadDropzone() {
       {results.length > 0 && (
         <div className="space-y-2">
           {successfulCount > 1 && (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={handleCopyAll}>
-                {copiedAll ? <Check/> : <Copy/>} {copiedAll ? 'Copied' : 'Copy all download links'}
-              </Button>
-              <Button variant="outline" onClick={() => setEditor({kind: 'all'})} disabled={editor?.kind === 'all'}>
-                <Lock/> Set password for all
-              </Button>
-            </div>
+            <Button variant="outline" onClick={handleCopyAll}>
+              {copiedAll ? <Check/> : <Copy/>} {copiedAll ? 'Copied' : 'Copy all download links'}
+            </Button>
           )}
           {results.map((result, index) => (
             <div key={result.id} className="bg-muted border border-border rounded-md p-3 space-y-2">
@@ -385,15 +324,16 @@ export function UploadDropzone() {
                     <p className="text-sm font-medium truncate min-w-0 max-w-full">{result.filename}</p>
                     {!result.failed && (
                       <div className="flex shrink-0 items-center gap-1">
-                        {result.passwordProtected ? (
-                          <Badge variant="secondary">
-                            <Lock/> Password protected
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-muted-foreground">
-                            <LockOpen/> No password
-                          </Badge>
-                        )}
+                        <Badge
+                          variant={result.passwordProtected ? 'secondary' : 'outline'}
+                          className={cn(!result.passwordProtected && 'text-muted-foreground')}
+                          render={result.adminUrl
+                            ? <a href={result.adminUrl} target="_blank" rel="noopener noreferrer"
+                                 title="Manage password on the private admin page"/>
+                            : undefined}
+                        >
+                          {result.passwordProtected ? <><Lock/> Password protected</> : <><LockOpen/> No password</>}
+                        </Badge>
                         {result.passwordProtected && result.password && (
                           <Button
                             variant="ghost"
@@ -406,38 +346,6 @@ export function UploadDropzone() {
                             {copiedPasswordId === result.id ? <Check className="text-green-500"/> : <Copy/>}
                           </Button>
                         )}
-                        {result.adminUrl && (result.passwordProtected ? (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="xs"
-                              className="text-muted-foreground"
-                              onClick={() => setEditor({kind: 'one', id: result.id})}
-                              disabled={result.passwordBusy}
-                            >
-                              Change
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="xs"
-                              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                              onClick={() => handleRemovePassword(result)}
-                              disabled={result.passwordBusy}
-                            >
-                              {result.passwordBusy && <Loader2 className="animate-spin"/>} Remove
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            className="text-muted-foreground"
-                            onClick={() => setEditor({kind: 'one', id: result.id})}
-                            disabled={result.passwordBusy}
-                          >
-                            Set password
-                          </Button>
-                        ))}
                       </div>
                     )}
                   </div>
@@ -464,9 +372,6 @@ export function UploadDropzone() {
                             {result.checksum}
                           </span>
                         </p>
-                      )}
-                      {result.passwordError && (
-                        <p className="text-xs text-destructive break-words mt-0.5" role="alert">{result.passwordError}</p>
                       )}
                     </>
                   )}
@@ -533,24 +438,8 @@ export function UploadDropzone() {
                   </div>
                 )}
               </div>
-              {editor?.kind === 'one' && editor.id === result.id && !result.failed && (
-                <PasswordEditor
-                  key={result.id}
-                  className="pl-8"
-                  onApply={(newPassword) => handleApplyOne(result, newPassword)}
-                  onCancel={() => setEditor(null)}
-                />
-              )}
             </div>
           ))}
-          {editor?.kind === 'all' && successfulCount > 1 && (
-            <PasswordEditor
-              key="all"
-              className="border border-border rounded-md p-3"
-              onApply={handleApplyAll}
-              onCancel={() => setEditor(null)}
-            />
-          )}
         </div>
       )}
     </div>

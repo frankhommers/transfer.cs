@@ -110,31 +110,22 @@ unprotected window.
 
 ## Frontend
 
-- Two paths, both optional:
-  - Set before uploading: the dropzone stays the first element; directly below it (above the
-    results) is one compact checkbox "Protect uploads with password". When checked, the
-    password field (without Apply/Cancel) appears right under the checkbox, prefilled with a
-    suggestion; uploads made while checked send `Download-Password-Base64`. An empty or
-    too long password blocks the dropzone. No helper paragraphs.
-  - After upload: per-result management through the admin API, described below. Unchecked
-    uploads have no password until one is set.
+- The upload page has exactly one place to enter a password, set before uploading: the
+  dropzone stays the first element; directly below it is one compact checkbox "Protect
+  uploads with password". When checked, the password field appears right under it,
+  prefilled with a suggestion; uploads made while checked send `Download-Password-Base64`.
+  An empty or too long password blocks the dropzone. No helper paragraphs.
+- The password field has show/hide, copy and "suggest" icons inside the input and a compact
+  length slider (8-32, default 16) showing only the number; moving the slider or clicking
+  suggest regenerates it. Suggested passwords avoid
+  `1lI!|¦0OoØ2Zz5Ss6b8B9g.,-_`'"/;{}()[]rnmvw\><&$`; typed passwords are unrestricted.
 - Every successful upload result shows its status: "Password protected" (lock) or
-  "No password" (open lock).
-- Unprotected results offer "Set password"; protected ones offer "Change" and "Remove".
-  With more than one successful result, "Set password for all" applies one password to all.
-- "Set password"/"Change" opens a single inline row below the result (or the list); only
-  one editor is open at a time. The shared password field has show/hide, copy and "suggest"
-  icons inside the input, a compact length slider (8-32, default 16) showing only the
-  number, and Apply/Cancel (Enter applies, Escape cancels, errors inline). A suggestion is
-  prefilled; moving the slider or clicking suggest regenerates it. "Set password for all"
-  applies sequentially and reports which files failed. Suggested
-  passwords avoid `1lI!|¦0OoØ2Zz5Ss6b8B9g.,-_`'"/;{}()[]rnmvw\><&$`; typed passwords are
-  unrestricted.
-- Link and password are never copied together (there is no "copy link + password").
-  Uploads made with the checkbox also get the badge and the separate copy icon. After applying, a separate "copy password"
-  icon sits next to the lock badge while the page is open; the password is kept in memory
+  "No password" (open lock). The badge links to the file's private admin page, which is the
+  single place to set, change or remove a password after upload. There is no per-result
+  editor and no "set password for all" on the upload page.
+- Link and password are never copied together. Protected results get a separate "copy
+  password" icon next to the badge while the page is open; the password is kept in memory
   only.
-- The private admin page gets a password section with the same set/change/remove actions.
 - Preview page: when `passwordProtected` and locked, show a lock, password field and unlock
   button. Unlock calls the unlock API, then refetches the preview and shows the normal preview
   (inline media included) and download button. Show clear messages for wrong passwords and
