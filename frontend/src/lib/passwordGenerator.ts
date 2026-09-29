@@ -1,7 +1,7 @@
 export const passwordAlphabet = 'acdefhijkpqtuxyACDEFGHJKLMNPQRTUVWXY347'
 export const minPasswordLength = 8
 export const maxPasswordLength = 32
-export const defaultPasswordLength = 16
+export const defaultPasswordLength = 20
 
 const maxGeneratedLength = 1024
 // Largest multiple of the alphabet size below 2^32; values at or above it are rejected so every character is equally likely.

@@ -116,7 +116,7 @@ unprotected window.
   prefilled with a suggestion; uploads made while checked send `Download-Password-Base64`.
   An empty or too long password blocks the dropzone. No helper paragraphs.
 - The password field has show/hide, copy and "suggest" icons inside the input and a compact
-  length slider (8-32, default 16) showing only the number; moving the slider or clicking
+  length slider (8-32, default 20) showing only the number; moving the slider or clicking
   suggest regenerates it. Suggested passwords use only `A-Za-z0-9` without the look-alikes
   `1lI0Oo2Zz5Ss6b8B9grnmvw` (39 characters); typed passwords are unrestricted.
 - Every successful upload result shows its status: "Password protected" (lock) or
