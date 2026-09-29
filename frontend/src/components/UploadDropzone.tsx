@@ -297,31 +297,6 @@ export function UploadDropzone() {
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2 text-left">
-        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="accent-primary"
-            checked={protect}
-            disabled={uploading}
-            onChange={(e) => handleProtectChange(e.target.checked)}
-          />
-          <Lock className="h-4 w-4 text-muted-foreground"/>
-          Protect uploads with password
-        </label>
-        {protect && (
-          <div className="space-y-1">
-            <PasswordField
-              value={password}
-              onChange={setPassword}
-              disabled={uploading}
-              invalid={!!passwordError}
-            />
-            {passwordError && <p className="text-xs text-destructive">{passwordError}</p>}
-          </div>
-        )}
-      </div>
-
       <div
         {...getRootProps()}
         className={cn('border-2 border-dashed rounded-md p-12 text-center transition-colors',
@@ -356,6 +331,31 @@ export function UploadDropzone() {
               Multiple files selected or dropped at once are combined into one ZIP with one download link.
             </p>
             <p className="text-xs text-muted-foreground">Separate uploads get separate links.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2 text-left">
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={protect}
+            disabled={uploading}
+            onChange={(e) => handleProtectChange(e.target.checked)}
+          />
+          <Lock className="h-4 w-4 text-muted-foreground"/>
+          Protect uploads with password
+        </label>
+        {protect && (
+          <div className="space-y-1">
+            <PasswordField
+              value={password}
+              onChange={setPassword}
+              disabled={uploading}
+              invalid={!!passwordError}
+            />
+            {passwordError && <p className="text-xs text-destructive">{passwordError}</p>}
           </div>
         )}
       </div>
