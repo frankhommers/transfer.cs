@@ -1,5 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -109,6 +111,38 @@ public sealed class DownloadPasswordFixture : IAsyncLifetime
     {
       Content = JsonContent.Create(new Dictionary<string, string> { ["password"] = password })
     };
+    return await client.SendAsync(request);
+  }
+
+  public static async Task<HttpResponseMessage> SetAdminPasswordAsync(HttpClient client, string token,
+    string adminToken, string password, string filename = "file.txt") =>
+    await SendAdminPasswordAsync(client, HttpMethod.Put, token, filename, adminToken,
+      JsonContent.Create(new Dictionary<string, string> { ["password"] = password }));
+
+  public static async Task<HttpResponseMessage> SetAdminPasswordJsonAsync(HttpClient client, string token,
+    string? adminToken, string json, string mediaType = "application/json", string filename = "file.txt") =>
+    await SendAdminPasswordAsync(client, HttpMethod.Put, token, filename, adminToken,
+      new StringContent(json, Encoding.UTF8, mediaType));
+
+  public static async Task<HttpResponseMessage> RemoveAdminPasswordAsync(HttpClient client, string token,
+    string? adminToken, string filename = "file.txt") =>
+    await SendAdminPasswordAsync(client, HttpMethod.Delete, token, filename, adminToken, null);
+
+  public static async Task<JsonDocument> GetAdminMetadataAsync(HttpClient client, string token, string adminToken)
+  {
+    using HttpRequestMessage request = new(HttpMethod.Get, $"/api/admin/{token}/file.txt");
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+    using HttpResponseMessage response = await client.SendAsync(request);
+    response.EnsureSuccessStatusCode();
+    return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+  }
+
+  private static async Task<HttpResponseMessage> SendAdminPasswordAsync(HttpClient client, HttpMethod method,
+    string token, string filename, string? adminToken, HttpContent? content)
+  {
+    using HttpRequestMessage request = new(method, $"/api/admin/{token}/{filename}/password") { Content = content };
+    if (adminToken != null)
+      request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
     return await client.SendAsync(request);
   }
 

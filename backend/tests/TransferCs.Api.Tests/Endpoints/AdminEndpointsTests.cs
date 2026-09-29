@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using TransferCs.Api.Tests.Helpers;
@@ -161,6 +162,55 @@ public class AdminEndpointsTests
     using HttpResponseMessage response = await client.DeleteAsync("/api/admin/missing/file.txt");
 
     Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+  }
+
+  [Fact]
+  public async Task AdminPassword_SetAndRemoveWorkWithoutJsonReflection()
+  {
+    await using WebApplicationFactory<Program> factory = CreateFactoryWithoutJsonReflection();
+    using HttpClient client = factory.CreateClient();
+    string token = UniqueToken("admin-password-trimmed");
+    using HttpResponseMessage upload = await UploadAsync(client, token, "file.txt");
+    string adminToken = GetAdminToken(upload);
+
+    using HttpRequestMessage setRequest = new(HttpMethod.Put, $"/api/admin/{token}/file.txt/password")
+    {
+      Content = new StringContent("{\"password\":\"secret\"}", Encoding.UTF8, "application/json")
+    };
+    setRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+    using HttpResponseMessage set = await client.SendAsync(setRequest);
+    using HttpResponseMessage locked = await client.GetAsync($"/{token}/file.txt");
+    using HttpRequestMessage removeRequest = new(HttpMethod.Delete, $"/api/admin/{token}/file.txt/password");
+    removeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+    using HttpResponseMessage remove = await client.SendAsync(removeRequest);
+    using HttpResponseMessage unlocked = await client.GetAsync($"/{token}/file.txt");
+
+    Assert.Equal(HttpStatusCode.NoContent, set.StatusCode);
+    Assert.Equal(HttpStatusCode.Unauthorized, locked.StatusCode);
+    Assert.Equal(HttpStatusCode.NoContent, remove.StatusCode);
+    Assert.Equal(HttpStatusCode.OK, unlocked.StatusCode);
+  }
+
+  [Theory]
+  [InlineData("PUT")]
+  [InlineData("DELETE")]
+  public async Task AdminPassword_AllowsCorsPreflight(string method)
+  {
+    await using WebApplicationFactory<Program> factory = CreateFactory(new Dictionary<string, string?>
+    {
+      ["TransferCs:CorsDomains"] = "https://app.example"
+    });
+    using HttpClient client = factory.CreateClient();
+    using HttpRequestMessage request = new(HttpMethod.Options, "/api/admin/token/file.txt/password");
+    request.Headers.Add("Origin", "https://app.example");
+    request.Headers.Add("Access-Control-Request-Method", method);
+    request.Headers.Add("Access-Control-Request-Headers", "authorization,content-type");
+
+    using HttpResponseMessage response = await client.SendAsync(request);
+
+    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    Assert.Equal("https://app.example", response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+    Assert.Contains(method, response.Headers.GetValues("Access-Control-Allow-Methods").Single());
   }
 
   [Fact]

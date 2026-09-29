@@ -133,11 +133,31 @@ public class MetadataService
     try
     {
       FileMetadata? metadata = await LoadAsync(token, filename, ct);
-      if (metadata == null || string.IsNullOrEmpty(metadata.AdminToken) ||
-          string.IsNullOrEmpty(adminToken) || !FixedTimeEquals(metadata.AdminToken, adminToken))
+      if (metadata == null || !IsAdminToken(metadata, adminToken))
         return null;
 
       return metadata;
+    }
+    finally
+    {
+      semaphore.Release();
+    }
+  }
+
+  public async Task<bool> SetPasswordHashForAdminAsync(string token, string filename, string adminToken,
+    string passwordHash, CancellationToken ct = default)
+  {
+    SemaphoreSlim semaphore = GetLock(token, filename);
+    await semaphore.WaitAsync(ct);
+    try
+    {
+      FileMetadata? metadata = await LoadAsync(token, filename, ct);
+      if (metadata == null || !IsAdminToken(metadata, adminToken))
+        return false;
+
+      metadata.PasswordHash = passwordHash;
+      await SaveAsync(token, filename, metadata, ct);
+      return true;
     }
     finally
     {
@@ -197,6 +217,10 @@ public class MetadataService
 
   private SemaphoreSlim GetLock(string token, string filename)
     => _locks.Get(_siteId, token, filename);
+
+  private static bool IsAdminToken(FileMetadata metadata, string adminToken) =>
+    !string.IsNullOrEmpty(metadata.AdminToken) && !string.IsNullOrEmpty(adminToken) &&
+    FixedTimeEquals(metadata.AdminToken, adminToken);
 
   private static bool FixedTimeEquals(string expected, string actual)
   {

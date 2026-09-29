@@ -44,9 +44,12 @@ public sealed class DownloadAuthorizer(
     if (!hasher.Verify(password, metadata.PasswordHash))
       return DownloadAuthorizationResult.WrongPassword;
 
-    limiter.Reset(siteContext.Site.Id, token, filename);
+    ResetAttempts(token, filename);
     return DownloadAuthorizationResult.Allowed;
   }
+
+  public void ResetAttempts(string token, string filename) =>
+    limiter.Reset(siteContext.Site.Id, token, filename);
 
   public void AppendUnlockCookie(HttpResponse response, bool secure, string token, string filename,
     FileMetadata metadata)

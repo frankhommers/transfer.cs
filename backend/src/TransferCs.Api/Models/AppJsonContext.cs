@@ -9,6 +9,7 @@ namespace TransferCs.Api.Models;
 [JsonSerializable(typeof(PreviewResult))]
 [JsonSerializable(typeof(LockedPreviewResult))]
 [JsonSerializable(typeof(UnlockRequest))]
+[JsonSerializable(typeof(SetPasswordRequest))]
 [JsonSerializable(typeof(PublicConfig))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(AdminMetadata))]

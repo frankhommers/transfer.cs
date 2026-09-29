@@ -97,6 +97,21 @@ public class DownloadAuthorizerTests
       _authorizer.VerifyPassword("secret", "token", "file", _protected).Status);
   }
 
+  [Fact]
+  public void ResetAttempts_ClearsLimitForThatFileOnly()
+  {
+    Authorize(RequestWithPassword("wrong"));
+    Authorize(RequestWithPassword("wrong"));
+    _authorizer.VerifyPassword("wrong", "other", "file", _protected);
+    _authorizer.VerifyPassword("wrong", "other", "file", _protected);
+
+    _authorizer.ResetAttempts("token", "file");
+
+    Assert.Equal(DownloadAuthorizationStatus.Allowed, Authorize(RequestWithPassword("secret")).Status);
+    Assert.Equal(DownloadAuthorizationStatus.TooManyAttempts,
+      _authorizer.VerifyPassword("secret", "other", "file", _protected).Status);
+  }
+
   [Theory]
   [InlineData("https", true)]
   [InlineData("http", false)]

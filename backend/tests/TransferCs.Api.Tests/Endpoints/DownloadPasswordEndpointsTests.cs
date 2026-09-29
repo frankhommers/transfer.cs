@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -474,14 +473,5 @@ public class DownloadPasswordEndpointsTests(DownloadPasswordFixture fixture) : I
     foreach (string header in _leakedHeaders)
       Assert.False(response.Headers.Contains(header), $"{header} must not be sent");
     Assert.Null(response.Content.Headers.ContentDisposition);
-  }
-
-  private static async Task<JsonDocument> GetAdminMetadataAsync(HttpClient client, string token, string adminToken)
-  {
-    using HttpRequestMessage request = new(HttpMethod.Get, $"/api/admin/{token}/file.txt");
-    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
-    using HttpResponseMessage response = await client.SendAsync(request);
-    response.EnsureSuccessStatusCode();
-    return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
   }
 }

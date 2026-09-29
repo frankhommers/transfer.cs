@@ -79,6 +79,30 @@ public class MetadataServiceTests : IDisposable
   }
 
   [Fact]
+  public async Task SetPasswordHashForAdmin_RequiresAdminTokenAndKeepsOtherFields()
+  {
+    FileMetadata metadata = new() { AdminToken = "admin", DeletionToken = "delete", Downloads = 3, Generation = "g1" };
+    await _service.SaveAsync("token4", "file.txt", metadata);
+
+    bool wrong = await _service.SetPasswordHashForAdminAsync("token4", "file.txt", "wrong", "hash");
+    bool missing = await _service.SetPasswordHashForAdminAsync("token4", "other.txt", "admin", "hash");
+    bool set = await _service.SetPasswordHashForAdminAsync("token4", "file.txt", "admin", "hash");
+    FileMetadata? protectedMetadata = await _service.LoadAsync("token4", "file.txt");
+    bool removed = await _service.SetPasswordHashForAdminAsync("token4", "file.txt", "admin", "");
+    FileMetadata? plainMetadata = await _service.LoadAsync("token4", "file.txt");
+
+    Assert.False(wrong);
+    Assert.False(missing);
+    Assert.True(set);
+    Assert.Equal("hash", protectedMetadata!.PasswordHash);
+    Assert.Equal(3, protectedMetadata.Downloads);
+    Assert.Equal("g1", protectedMetadata.Generation);
+    Assert.Equal("delete", protectedMetadata.DeletionToken);
+    Assert.True(removed);
+    Assert.False(plainMetadata!.PasswordProtected);
+  }
+
+  [Fact]
   public async Task EmptyStoredAdminToken_DoesNotAuthorizeEmptyHeader()
   {
     FileMetadata metadata = new() { AdminToken = "" };
