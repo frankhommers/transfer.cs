@@ -86,6 +86,7 @@ http {{BaseUrl}}/ < ./file.txt
 | `Max-Downloads` | Download limit | `-H "Max-Downloads: 1"` |
 | `Encrypt-Password` | Server-side encrypt with password | `-H "Encrypt-Password: secret"` |
 | `Download-Password` | Require this password to download (1-1024 characters) | `-H "Download-Password: secret"` |
+| `Download-Password-Base64` | Same, base64-encoded UTF-8 (non-ASCII or space-padded passwords) | `-H "Download-Password-Base64: $(printf %s 'café' \| base64)"` |
 | `Token` | Custom URL slug (min 4 chars, a-z0-9 and hyphens) | `-H "Token: my-slug"` |
 | `Content-Digest` | PUT only: validate one SHA-256 digest | `-H "Content-Digest: sha-256=:<base64>:"` |
 | `Accept` | Request upload metadata as JSON | `-H "Accept: application/json"` |
@@ -147,8 +148,9 @@ curl -H "Decrypt-Password: secret" {{BaseUrl}}/<token>/file.txt -o ./file.txt
 
 Add `Download-Password` to any upload (PUT, `POST /` or `POST /archive`). Every file stored
 by that request gets the same password, and the upload JSON reports `passwordProtected: true`.
-The value is used exactly as sent; empty, whitespace-only or longer than 1024 characters
-returns 400. This is an access gate, not encryption: combine it with `Encrypt-Password` or
+Any password of 1 to 1024 characters works; empty or longer returns 400. For passwords
+with non-ASCII characters or leading/trailing spaces, send `Download-Password-Base64` with
+the UTF-8 bytes base64-encoded instead (never both). This is an access gate, not encryption: combine it with `Encrypt-Password` or
 client-side encryption if the stored file must be encrypted.
 
 ```bash

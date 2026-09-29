@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using TransferCs.Api.Models;
 using TransferCs.Api.Tests.Helpers;
@@ -388,6 +389,64 @@ public class DownloadPasswordEndpointsTests(DownloadPasswordFixture fixture) : I
     using HttpResponseMessage response = await client.DeleteAsync(new Uri(file.DeleteUrl).AbsolutePath);
 
     Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+  }
+
+  [Theory]
+  [InlineData("PUT", "/put/file.txt")]
+  [InlineData("POST", "/")]
+  [InlineData("POST", "/archive")]
+  public async Task Upload_AcceptsAnyPasswordThroughBase64HeaderAsync(string method, string path)
+  {
+    using HttpClient client = fixture.CreateClient();
+    const string password = " café ☕ 1lI0O \"'$<>& ";
+    using HttpRequestMessage request = UploadRequest(method, path);
+    request.Headers.Add("Download-Password-Base64", Convert.ToBase64String(Encoding.UTF8.GetBytes(password)));
+
+    using HttpResponseMessage response = await client.SendAsync(request);
+    UploadResponse result = (await response.Content.ReadFromJsonAsync<UploadResponse>())!;
+
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    foreach (UploadedFile file in result.Files)
+    {
+      string[] segments = new Uri(file.Url).AbsolutePath.Trim('/').Split('/');
+      using HttpResponseMessage trimmed = await UnlockAsync(client, segments[0], segments[1], password.Trim());
+      using HttpResponseMessage unlocked = await UnlockAsync(client, segments[0], segments[1], password);
+      Assert.Equal(HttpStatusCode.Unauthorized, trimmed.StatusCode);
+      Assert.Equal(HttpStatusCode.NoContent, unlocked.StatusCode);
+    }
+  }
+
+  [Fact]
+  public async Task Get_AcceptsBase64PasswordHeaderAsync()
+  {
+    using HttpClient client = fixture.CreateClient();
+    string token = UniqueToken("base64-get");
+    await UploadAsync(client, token);
+    using HttpRequestMessage request = new(HttpMethod.Get, $"/{token}/file.txt");
+    request.Headers.Add("Download-Password-Base64", Convert.ToBase64String(Encoding.UTF8.GetBytes(Password)));
+
+    using HttpResponseMessage response = await client.SendAsync(request);
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+  }
+
+  [Theory]
+  [InlineData("PUT", "/put/file.txt")]
+  [InlineData("POST", "/archive")]
+  public async Task Upload_RejectsBothPasswordHeadersAndInvalidBase64Async(string method, string path)
+  {
+    using HttpClient client = fixture.CreateClient();
+
+    using HttpRequestMessage both = UploadRequest(method, path);
+    both.Headers.Add("Download-Password", "x");
+    both.Headers.Add("Download-Password-Base64", "eA==");
+    using HttpRequestMessage invalid = UploadRequest(method, path);
+    invalid.Headers.Add("Download-Password-Base64", "not base64!");
+    using HttpResponseMessage bothResponse = await client.SendAsync(both);
+    using HttpResponseMessage invalidResponse = await client.SendAsync(invalid);
+
+    Assert.Equal(HttpStatusCode.BadRequest, bothResponse.StatusCode);
+    Assert.Equal(HttpStatusCode.BadRequest, invalidResponse.StatusCode);
   }
 
   private static HttpRequestMessage UploadRequest(string method, string path)

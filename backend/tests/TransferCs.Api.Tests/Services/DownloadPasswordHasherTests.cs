@@ -26,6 +26,13 @@ public class DownloadPasswordHasherTests
   }
 
   [Fact]
+  public void Verify_TreatsCanonicallyEquivalentUnicodeAsEqual()
+  {
+    Assert.True(_hasher.Verify("cafe\u0301", _hasher.Hash("caf\u00e9")));
+    Assert.True(_hasher.Verify("caf\u00e9", _hasher.Hash("cafe\u0301")));
+  }
+
+  [Fact]
   public void Hash_UsesRandomSalt()
   {
     Assert.NotEqual(_hasher.Hash("secret"), _hasher.Hash("secret"));

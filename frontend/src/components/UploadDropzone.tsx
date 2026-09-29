@@ -29,12 +29,9 @@ type UploadedFileResult = Pick<UploadResult, 'filename' | 'url' | 'deleteUrl' | 
 
 const maxPasswordLength = 1024
 
-// Browsers can only send printable ASCII in a request header, and HTTP strips surrounding spaces.
 function validatePassword(password: string): string | null {
-  if (!password.trim()) return 'Enter a password.'
+  if (!password) return 'Enter a password.'
   if (password.length > maxPasswordLength) return `Use at most ${maxPasswordLength} characters.`
-  if (!/^[\x20-\x7E]*$/.test(password)) return 'Use printable ASCII characters only.'
-  if (password !== password.trim()) return 'Remove leading and trailing spaces.'
   return null
 }
 
@@ -69,6 +66,10 @@ function verifyCommand(result: {checksum: string; filename: string}): string {
   return `printf '%s\\n' '${line}' | shasum -a 256 -c`
 }
 
+function encodeBase64(text: string) {
+  return btoa(Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(''))
+}
+
 async function copyToClipboard(text: string) {
   try {
     await navigator.clipboard.writeText(text)
@@ -94,7 +95,7 @@ function uploadFiles(
     const xhr = new XMLHttpRequest()
     xhr.open(files.length > 1 ? 'POST' : 'PUT', files.length > 1 ? '/archive' : `/${encodeURIComponent(files[0].name)}`)
     xhr.setRequestHeader('Accept', 'application/json')
-    if (password) xhr.setRequestHeader('Download-Password', password)
+    if (password) xhr.setRequestHeader('Download-Password-Base64', encodeBase64(password))
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {

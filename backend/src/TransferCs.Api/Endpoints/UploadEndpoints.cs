@@ -47,13 +47,11 @@ public static class UploadEndpoints
       expiry = DateTime.UtcNow.AddDays(options.PurgeDays);
     }
 
-    if (request.Headers.TryGetValue(DownloadAuthorizer.HeaderName, out StringValues downloadPassword))
-    {
-      string? passwordError = DownloadPasswordHeader.Validate(downloadPassword);
-      if (passwordError != null)
-        return Results.BadRequest(passwordError);
-      passwordHash = hasher.Hash(downloadPassword.ToString());
-    }
+    string? passwordError = DownloadPasswordHeader.Read(request.Headers, out string? downloadPassword);
+    if (passwordError != null)
+      return Results.BadRequest(passwordError);
+    if (downloadPassword != null)
+      passwordHash = hasher.Hash(downloadPassword);
 
     return null;
   }

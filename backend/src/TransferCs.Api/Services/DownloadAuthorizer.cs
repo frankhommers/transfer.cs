@@ -1,5 +1,5 @@
-using Microsoft.Extensions.Primitives;
 using TransferCs.Api.Configuration;
+using TransferCs.Api.Helpers;
 using TransferCs.Api.Models;
 
 namespace TransferCs.Api.Services;
@@ -23,9 +23,11 @@ public sealed class DownloadAuthorizer(
           token, filename, timeProvider.GetUtcNow()))
       return DownloadAuthorizationResult.Allowed;
 
-    return request.Headers.TryGetValue(HeaderName, out StringValues password)
-      ? VerifyPassword(password.ToString(), token, filename, metadata)
-      : DownloadAuthorizationResult.MissingCredentials;
+    if (!DownloadPasswordHeader.IsPresent(request.Headers))
+      return DownloadAuthorizationResult.MissingCredentials;
+    return DownloadPasswordHeader.Read(request.Headers, out string? password) == null && password != null
+      ? VerifyPassword(password, token, filename, metadata)
+      : DownloadAuthorizationResult.WrongPassword;
   }
 
   public DownloadAuthorizationResult VerifyPassword(string password, string token, string filename,

@@ -169,11 +169,13 @@ curl -H "Download-Password: secret" https://transfer.example.com/<token>/report.
 curl -C - -H "Download-Password: secret" https://transfer.example.com/<token>/report.pdf -o ./report.pdf
 ```
 
-The value is used exactly as sent. Empty, whitespace-only, or longer than 1024 characters
-returns `400`. The upload JSON reports `passwordProtected` per file. The password is stored
-as a salted PBKDF2-SHA256 hash and cannot be changed or removed after upload. The browser
-upload form only accepts printable ASCII without leading or trailing spaces, because
-browsers cannot send other characters in a request header.
+Any password of 1 to 1024 characters is accepted; empty or longer returns `400`. HTTP strips
+surrounding whitespace from header values and cannot reliably carry non-ASCII text, so send
+such passwords base64-encoded (UTF-8) in `Download-Password-Base64` instead; the browser
+upload form always does this. Sending both headers returns `400`. Passwords are compared
+after Unicode NFC normalization. The upload JSON reports `passwordProtected` per file. The
+password is stored as a salted PBKDF2-SHA256 hash and cannot be changed or removed after
+upload.
 
 Protected: GET and HEAD on `/<token>/<file>` and `/{download,get,inline}/<token>/<file>`,
 bundles, and the preview API. Without credentials:
@@ -214,6 +216,7 @@ against `Max-Downloads`.
 | `Token` | PUT, single-file POST `/`, POST `/archive` | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
 | `Encrypt-Password` | PUT | Server-side encryption password | any string |
 | `Download-Password` | PUT, multipart POST; GET, HEAD, bundles, preview API | Require (upload) or supply (download) the download password | 1–1024 characters |
+| `Download-Password-Base64` | Same as `Download-Password` | The password as base64-encoded UTF-8, for non-ASCII or space-padded passwords | `Y2Fmw6kg4piV` |
 | `Content-Digest` | PUT | Validate the uploaded bytes before storage | `sha-256=:<base64>:` |
 | `Decrypt-Password` | GET | Decrypt an encrypted download | any string |
 | `Authorization` | Admin API | Per-file capability token | `Bearer <admin-token>` |
@@ -769,7 +772,8 @@ expected upload; the defaults for write and idle timeouts are `0s` and `180s`.
 ### Important: Custom headers
 
 Preserve `Authorization`, `Content-Digest`, `File-Lifetime`, `Token`, `Encrypt-Password`,
-`Decrypt-Password`, `Download-Password`, `Cookie`, and `Max-Downloads` on requests, and
+`Decrypt-Password`, `Download-Password`, `Download-Password-Base64`, `Cookie`, and
+`Max-Downloads` on requests, and
 `Location`, `Link`, `Repr-Digest`, `Sunset`, `Retry-After`, and `Set-Cookie` on responses. Traefik passes them through by default. Check any configured
 `customRequestHeaders` or `customResponseHeaders` overrides. When CORS is enabled,
 transfer.cs exposes the response headers needed by browser clients.

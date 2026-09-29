@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace TransferCs.Api.Services;
 
@@ -24,7 +25,7 @@ public sealed class DownloadPasswordHasher
   public string Hash(string password)
   {
     byte[] salt = RandomNumberGenerator.GetBytes(SaltSize);
-    byte[] hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, _iterations, HashAlgorithmName.SHA256, HashSize);
+    byte[] hash = Rfc2898DeriveBytes.Pbkdf2(Normalize(password), salt, _iterations, HashAlgorithmName.SHA256, HashSize);
     return string.Join('$', Algorithm, _iterations.ToString(CultureInfo.InvariantCulture),
       Convert.ToBase64String(salt), Convert.ToBase64String(hash));
   }
@@ -33,9 +34,12 @@ public sealed class DownloadPasswordHasher
   {
     if (!TryParse(storedHash, out int iterations, out byte[] salt, out byte[] expected))
       return false;
-    byte[] actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, HashSize);
+    byte[] actual = Rfc2898DeriveBytes.Pbkdf2(Normalize(password), salt, iterations, HashAlgorithmName.SHA256, HashSize);
     return CryptographicOperations.FixedTimeEquals(actual, expected);
   }
+
+  // Keyboards and operating systems may produce different code points for the same visible text (é vs e + ◌́).
+  private static string Normalize(string password) => password.Normalize(NormalizationForm.FormC);
 
   public static bool TryGetHashBytes(string storedHash, out byte[] hash) =>
     TryParse(storedHash, out _, out _, out hash);
