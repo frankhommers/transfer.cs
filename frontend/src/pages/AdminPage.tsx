@@ -7,10 +7,12 @@ import {
   Fingerprint,
   HardDrive,
   LoaderCircle,
+  Lock,
   Network,
   ShieldAlert,
   Trash2,
 } from 'lucide-react'
+import {Badge} from '@/components/ui/badge'
 import {Button} from '@/components/ui/button'
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card'
 import {SiteBrandLink} from '@/components/SiteBrandLink'
@@ -27,6 +29,7 @@ interface AdminMetadata {
   contentLength: number
   contentType: string
   sha256: string
+  passwordProtected: boolean
   downloads: number
   maxDownloads: number
   maxDate: string
@@ -160,6 +163,11 @@ export function AdminPage() {
             private control plane
           </div>
           <h1 className="break-all text-3xl font-semibold tracking-tight">{metadata.filename}</h1>
+          {metadata.passwordProtected && (
+            <Badge variant="secondary" className="mt-3" title="Recipients need the download password">
+              <Lock/> Password protected
+            </Badge>
+          )}
           <p className="mt-2 text-sm text-muted-foreground">Capability verified. This view is not publicly discoverable.</p>
         </header>
 

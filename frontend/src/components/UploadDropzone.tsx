@@ -1,8 +1,10 @@
 import {useState, useCallback, useRef} from 'react'
 import {useDropzone} from 'react-dropzone'
-import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw} from 'lucide-react'
+import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockKeyhole, Eye, EyeOff} from 'lucide-react'
 import {Progress} from '@/components/ui/progress'
 import {Button} from '@/components/ui/button'
+import {Input} from '@/components/ui/input'
+import {Badge} from '@/components/ui/badge'
 import {cn} from '@/lib/utils'
 
 interface UploadResult {
@@ -14,9 +16,24 @@ interface UploadResult {
   adminUrl: string
   expires: string | null
   checksum: string
+  passwordProtected: boolean
+  password?: string
   failed: boolean
   error?: string
   retrying?: boolean
+}
+
+type UploadedFileResult = Pick<UploadResult, 'filename' | 'url' | 'deleteUrl' | 'adminUrl' | 'expires' | 'checksum' | 'passwordProtected'>
+
+const maxPasswordLength = 1024
+
+// Browsers can only send printable ASCII in a request header, and HTTP strips surrounding spaces.
+function validatePassword(password: string): string | null {
+  if (!password.trim()) return 'Enter a password.'
+  if (password.length > maxPasswordLength) return `Use at most ${maxPasswordLength} characters.`
+  if (!/^[\x20-\x7E]*$/.test(password)) return 'Use printable ASCII characters only.'
+  if (password !== password.trim()) return 'Remove leading and trailing spaces.'
+  return null
 }
 
 interface UploadProgress {
@@ -67,13 +84,15 @@ async function copyToClipboard(text: string) {
 
 function uploadFiles(
   files: File[],
+  password: string | undefined,
   onProgress: (loaded: number, total: number) => void,
   onProcessing: () => void
-): Promise<{ filename: string; url: string; deleteUrl: string; adminUrl: string; expires: string | null; checksum: string }> {
+): Promise<UploadedFileResult> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open(files.length > 1 ? 'POST' : 'PUT', files.length > 1 ? '/archive' : `/${encodeURIComponent(files[0].name)}`)
     xhr.setRequestHeader('Accept', 'application/json')
+    if (password) xhr.setRequestHeader('Download-Password', password)
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {
@@ -87,11 +106,11 @@ function uploadFiles(
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const {files} = JSON.parse(xhr.responseText) as {
-            files: {filename: string; url: string; deleteUrl: string; adminUrl: string; expires: string | null; sha256: string}[]
+            files: (Omit<UploadedFileResult, 'checksum'> & {sha256: string})[]
           }
           if (files.length !== 1 || !files[0].url) throw new Error('Invalid upload response')
-          const result = files[0]
-          resolve({...result, checksum: result.sha256})
+          const {sha256, ...result} = files[0]
+          resolve({...result, checksum: sha256, passwordProtected: result.passwordProtected === true})
         } catch {
           reject(new Error('Invalid upload response'))
         }
@@ -124,10 +143,17 @@ export function UploadDropzone() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [copiedChecksumIndex, setCopiedChecksumIndex] = useState<number | null>(null)
   const [copiedAdminIndex, setCopiedAdminIndex] = useState<number | null>(null)
+  const [copiedPasswordIndex, setCopiedPasswordIndex] = useState<number | null>(null)
   const [copiedAll, setCopiedAll] = useState(false)
+  const [protect, setProtect] = useState(false)
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const passwordError = protect ? validatePassword(password) : null
+  const uploadPassword = protect && !passwordError ? password : undefined
 
   const onDrop = useCallback(async (files: File[]) => {
     if (busy.current || files.length === 0) return
+    if (protect && !uploadPassword) return
     busy.current = true
     setUploading(true)
     setProcessing(false)
@@ -137,23 +163,26 @@ export function UploadDropzone() {
     setProgress({loaded: 0, total: files.reduce((sum, file) => sum + file.size, 0)})
 
     try {
-      const result = await uploadFiles(files, (loaded, total) => {
+      const result = await uploadFiles(files, uploadPassword, (loaded, total) => {
         setProgress({loaded, total})
       }, () => setProcessing(true))
-      setResults((prev) => [...prev, {id, files, ...result, failed: false}])
+      setResults((prev) => [...prev, {id, files, ...result, password: uploadPassword, failed: false}])
     } catch (error: unknown) {
       setResults((prev) => [...prev, {
         id, files, error: error instanceof Error ? error.message : 'Upload failed',
-        filename, url: '', deleteUrl: '', adminUrl: '', expires: null, checksum: '', failed: true,
+        filename, url: '', deleteUrl: '', adminUrl: '', expires: null, checksum: '',
+        passwordProtected: false, password: uploadPassword, failed: true,
       }])
     } finally {
       busy.current = false
       setUploading(false)
       setProcessing(false)
     }
-  }, [])
+  }, [protect, uploadPassword])
 
-  const {getRootProps, getInputProps, isDragActive} = useDropzone({onDrop, disabled: uploading, multiple: true})
+  const {getRootProps, getInputProps, isDragActive} = useDropzone({
+    onDrop, disabled: uploading || !!passwordError, multiple: true,
+  })
 
   const handleRetry = async (result: UploadResult) => {
     if (busy.current) return
@@ -164,7 +193,7 @@ export function UploadDropzone() {
     setProgress({loaded: 0, total: result.files.reduce((sum, file) => sum + file.size, 0)})
     setResults((prev) => prev.map((item) => item.id === result.id ? {...item, retrying: true} : item))
     try {
-      const uploaded = await uploadFiles(result.files, (loaded, total) => {
+      const uploaded = await uploadFiles(result.files, result.password, (loaded, total) => {
         setProgress({loaded, total})
       }, () => setProcessing(true))
       setResults((prev) => prev.map((item) => item.id === result.id
@@ -203,6 +232,12 @@ export function UploadDropzone() {
     setTimeout(() => setCopiedAdminIndex(null), 2000)
   }
 
+  const handleCopyWithPassword = async (result: UploadResult, index: number) => {
+    await copyToClipboard(`${result.url}\nPassword: ${result.password ?? ''}`)
+    setCopiedPasswordIndex(index)
+    setTimeout(() => setCopiedPasswordIndex(null), 2000)
+  }
+
   const handleDelete = async (result: UploadResult) => {
     if (!result.deleteUrl) return
     try {
@@ -222,7 +257,7 @@ export function UploadDropzone() {
       <div
         {...getRootProps()}
         className={cn('border-2 border-dashed rounded-md p-12 text-center transition-colors',
-          uploading ? 'cursor-wait' : 'cursor-pointer',
+          uploading ? 'cursor-wait' : passwordError ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
           isDragActive
             ? 'border-primary bg-primary/5'
             : 'border-muted-foreground/25 hover:border-primary/50'
@@ -257,6 +292,49 @@ export function UploadDropzone() {
         )}
       </div>
 
+      <div className="space-y-2 text-left">
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="accent-primary"
+            checked={protect}
+            disabled={uploading}
+            onChange={(e) => setProtect(e.target.checked)}
+          />
+          <Lock className="h-4 w-4 text-muted-foreground"/>
+          Protect with password
+        </label>
+        {protect && (
+          <div className="space-y-1">
+            <div className="flex max-w-sm items-center gap-2">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Download password"
+                aria-label="Download password"
+                aria-invalid={password !== '' && !!passwordError}
+                autoComplete="new-password"
+                disabled={uploading}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff/> : <Eye/>}
+              </Button>
+            </div>
+            <p className={cn('text-xs', passwordError && password !== '' ? 'text-destructive' : 'text-muted-foreground')}>
+              {passwordError ?? 'Recipients need this password to download. Share it separately from the link.'}
+            </p>
+          </div>
+        )}
+      </div>
+
       {results.length > 0 && (
         <div className="space-y-2">
           {results.filter((result) => !result.failed).length > 1 && (
@@ -275,7 +353,14 @@ export function UploadDropzone() {
                 <CheckCircle className="h-5 w-5 text-green-500 shrink-0"/>
               )}
               <div className="flex-1 min-w-0 text-left">
-                <p className="text-sm font-medium truncate">{result.filename}</p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="text-sm font-medium truncate">{result.filename}</p>
+                  {result.passwordProtected && (
+                    <Badge variant="secondary" className="shrink-0" title="Password protected">
+                      <Lock/> Password
+                    </Badge>
+                  )}
+                </div>
                 {result.files.length > 1 && (
                   <p className="text-xs text-muted-foreground">{result.files.length} files in one ZIP</p>
                 )}
@@ -322,6 +407,21 @@ export function UploadDropzone() {
                       <Copy className="h-4 w-4"/>
                     )}
                   </button>
+                  {result.passwordProtected && result.password && (
+                    <button
+                      type="button"
+                      className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                      onClick={() => handleCopyWithPassword(result, index)}
+                      aria-label="Copy link and password"
+                      title="Copy link + password"
+                    >
+                      {copiedPasswordIndex === index ? (
+                        <Check className="h-4 w-4 text-green-500"/>
+                      ) : (
+                        <LockKeyhole className="h-4 w-4"/>
+                      )}
+                    </button>
+                  )}
                   {result.checksum && (
                     <button
                       type="button"

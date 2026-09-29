@@ -1,7 +1,7 @@
 import {useState} from 'react'
 import {Icon} from '@mdi/react'
 import {
-  mdiClockOutline, mdiDownload, mdiLock, mdiShieldLock,
+  mdiClockOutline, mdiDownload, mdiLock, mdiShieldLock, mdiKeyVariant,
   mdiTagText, mdiFile, mdiFileMultiple, mdiArchive, mdiPlus, mdiClose, mdiFolderZip, mdiProgressHelper, mdiFolder, mdiConsoleLine, mdiPipe, mdiScript,
 } from '@mdi/js'
 import {CodeBlock} from '@/components/CodeBlock'
@@ -22,6 +22,7 @@ const headerOptions: HeaderOption[] = [
   {key: 'expires', label: 'Expires', icon: mdiClockOutline, header: 'File-Lifetime', placeholder: '7d', type: 'text'},
   {key: 'maxDownloads', label: 'Max downloads', icon: mdiDownload, header: 'Max-Downloads', placeholder: '1', type: 'number'},
   {key: 'serverEncrypt', label: 'Server encrypt', icon: mdiLock, header: 'Encrypt-Password', placeholder: 'password', type: 'text'},
+  {key: 'downloadPassword', label: 'Download password', icon: mdiKeyVariant, header: 'Download-Password', placeholder: 'secret', type: 'text'},
   {key: 'customToken', label: 'Custom token', icon: mdiTagText, header: 'Token', placeholder: 'my-slug', type: 'text'},
 ]
 
@@ -79,6 +80,10 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
   const serverDecryptHeader = active['serverEncrypt']
     ? ` -H "Decrypt-Password: ${values['serverEncrypt'] || 'password'}"`
     : ''
+  const downloadPasswordHeader = active['downloadPassword']
+    ? ` -H "Download-Password: ${values['downloadPassword'] || 'secret'}"`
+    : ''
+  const downloadHeaders = `${serverDecryptHeader}${downloadPasswordHeader}`
 
   // --- Command generation per mode ---
   let uploadCmd: string
@@ -102,9 +107,9 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
       ].filter(Boolean).join(' ')
     }
     if (clientGpg) {
-      downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${file} | gpg -o- > ./${file}`
+      downloadCmd = `curl${downloadHeaders} ${baseUrl}/${tokenSlug}/${file} | gpg -o- > ./${file}`
     } else {
-      downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${file} -o ./${file}`
+      downloadCmd = `curl${downloadHeaders} ${baseUrl}/${tokenSlug}/${file} -o ./${file}`
     }
   } else if (mode === 'multiple') {
     const fileList = files.filter(Boolean)
@@ -120,7 +125,7 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
         `${baseUrl}/`,
       ].filter(Boolean).join(' ')
       const bundleFiles = fileList.map((f) => `${tokenSlug}/${f}`).join(',')
-      downloadCmd = `curl "${baseUrl}/bundle.zip?files=${bundleFiles}" -o bundle.zip`
+      downloadCmd = `curl${downloadPasswordHeader} "${baseUrl}/bundle.zip?files=${bundleFiles}" -o bundle.zip`
     }
   } else if (mode === 'archive') {
     const name = archiveName || 'files'
@@ -140,8 +145,8 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
         : `curl --upload-file ${tmpFile} ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
       uploadCmd = `${tarLine}\n${curlLine}\nrm ${tmpFile}`
       downloadCmd = clientGpg
-        ? `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | gpg -o- | tar ${untarFlag} -`
-        : `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
+        ? `curl${downloadHeaders} ${baseUrl}/${tokenSlug}/${tarFile} | gpg -o- | tar ${untarFlag} -`
+        : `curl${downloadHeaders} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
     } else {
       if (clientGpg) {
         uploadCmd = `tar ${tarFlag} - ${tarSource} | gpg -ac -o- | curl -X PUT --upload-file "-" ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
@@ -149,9 +154,9 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
         uploadCmd = `tar ${tarFlag} - ${tarSource} | curl --upload-file - ${headerFlags ? headerFlags + ' ' : ''}${baseUrl}/${tarFile}`
       }
       if (clientGpg) {
-        downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | gpg -o- | tar ${untarFlag} -`
+        downloadCmd = `curl${downloadHeaders} ${baseUrl}/${tokenSlug}/${tarFile} | gpg -o- | tar ${untarFlag} -`
       } else {
-        downloadCmd = `curl${serverDecryptHeader} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
+        downloadCmd = `curl${downloadHeaders} ${baseUrl}/${tokenSlug}/${tarFile} | tar ${untarFlag} -`
       }
     }
   } else {
@@ -162,9 +167,10 @@ export function CommandComposer({baseUrl}: { baseUrl: string }) {
     if (active['maxDownloads'] && (values['maxDownloads'] || 'default')) cliFlags.push(`-d ${values['maxDownloads'] || '1'}`)
     if (active['customToken'] && values['customToken']) cliFlags.push(`-t ${values['customToken']}`)
     if (active['serverEncrypt'] && (values['serverEncrypt'] || 'default')) cliFlags.push(`-p ${values['serverEncrypt'] || 'password'}`)
+    if (active['downloadPassword']) cliFlags.push(`-P ${values['downloadPassword'] || 'secret'}`)
     const flags = cliFlags.length > 0 ? ' ' + cliFlags.join(' ') : ''
     uploadCmd = `transfer ${file}${flags}`
-    downloadCmd = `curl ${baseUrl}/${tokenSlug}/${file} -o ./${file}`
+    downloadCmd = `curl${downloadPasswordHeader} ${baseUrl}/${tokenSlug}/${file} -o ./${file}`
   }
 
   // Inject --progress-bar into curl commands

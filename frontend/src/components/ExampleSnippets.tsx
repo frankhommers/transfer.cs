@@ -20,6 +20,14 @@ export function ExampleSnippets({baseUrl}: { baseUrl: string }) {
       code: `curl --upload-file ./hello.txt -H "Token: my-slug" ${baseUrl}/hello.txt`,
     },
     {
+      title: 'Upload with download password',
+      code: `curl --upload-file ./hello.txt -H "Download-Password: secret" ${baseUrl}/hello.txt`,
+    },
+    {
+      title: 'Download password-protected file (resumable)',
+      code: `curl -C - -H "Download-Password: secret" ${baseUrl}/<token>/hello.txt -o ./hello.txt`,
+    },
+    {
       title: 'Upload using wget',
       code: `wget --method PUT --body-file=./file.txt ${baseUrl}/file.txt -O - -nv`,
     },
