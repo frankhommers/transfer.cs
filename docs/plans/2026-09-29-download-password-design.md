@@ -111,8 +111,9 @@ unprotected window.
 ## Frontend
 
 - Two paths, both optional:
-  - Before upload: one compact checkbox "Protect uploads with password" above the dropzone.
-    When checked it shows the password field (below, without Apply/Cancel) prefilled with a
+  - Set before uploading: the dropzone stays the first element; directly below it (above the
+    results) is one compact checkbox "Protect uploads with password". When checked, the
+    password field (without Apply/Cancel) appears right under the checkbox, prefilled with a
     suggestion; uploads made while checked send `Download-Password-Base64`. An empty or
     too long password blocks the dropzone. No helper paragraphs.
   - After upload: per-result management through the admin API, described below. Unchecked
