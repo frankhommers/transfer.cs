@@ -2,12 +2,15 @@ import {useEffect, useState} from 'react'
 import {useNavigate, useParams} from 'react-router-dom'
 import {
   CalendarClock,
+  Check,
+  Copy,
   Download,
   FileKey2,
   Fingerprint,
   HardDrive,
   LoaderCircle,
   Lock,
+  LockOpen,
   Network,
   ShieldAlert,
   Trash2,
@@ -15,9 +18,12 @@ import {
 import {Badge} from '@/components/ui/badge'
 import {Button} from '@/components/ui/button'
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card'
+import {PasswordEditor} from '@/components/PasswordEditor'
 import {SiteBrandLink} from '@/components/SiteBrandLink'
 import {useConfig} from '@/hooks/useConfig'
 import {useDocumentTitle} from '@/hooks/useDocumentTitle'
+import {copyToClipboard} from '@/lib/clipboard'
+import {removeDownloadPassword, setDownloadPassword, type AdminTarget} from '@/lib/downloadPassword'
 
 interface DownloadEntry {
   ipAddress: string
@@ -75,6 +81,11 @@ export function AdminPage() {
   const [adminToken] = useState(() => readAdminToken(storageKey))
   const [state, setState] = useState<PageState>(adminToken ? {status: 'loading'} : {status: 'missing'})
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editingPassword, setEditingPassword] = useState(false)
+  const [password, setPassword] = useState<string | null>(null)
+  const [passwordBusy, setPasswordBusy] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [copiedPassword, setCopiedPassword] = useState(false)
   const {title} = useConfig()
   useDocumentTitle(`Admin · ${filename} · ${title}`)
 
@@ -118,6 +129,42 @@ export function AdminPage() {
     } else {
       setState({status: 'error'})
     }
+  }
+
+  const adminTarget: AdminTarget = {token, filename, adminToken}
+
+  const setPasswordProtected = (passwordProtected: boolean) => {
+    setState((prev) => prev.status === 'ready' ? {status: 'ready', metadata: {...prev.metadata, passwordProtected}} : prev)
+  }
+
+  const applyPassword = async (newPassword: string) => {
+    await setDownloadPassword(adminTarget, newPassword)
+    setPassword(newPassword)
+    setPasswordProtected(true)
+    setPasswordError(null)
+    setEditingPassword(false)
+  }
+
+  const removePassword = async () => {
+    setEditingPassword(false)
+    setPasswordBusy(true)
+    setPasswordError(null)
+    try {
+      await removeDownloadPassword(adminTarget)
+      setPassword(null)
+      setPasswordProtected(false)
+    } catch (error: unknown) {
+      setPasswordError(error instanceof Error ? error.message : 'Could not remove the password.')
+    } finally {
+      setPasswordBusy(false)
+    }
+  }
+
+  const copyPassword = async () => {
+    if (!password) return
+    await copyToClipboard(password)
+    setCopiedPassword(true)
+    setTimeout(() => setCopiedPassword(false), 2000)
   }
 
   if (state.status !== 'ready') {
@@ -222,6 +269,57 @@ export function AdminPage() {
                 >
                   <Download className="size-4"/> Download file
                 </a>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="flex items-center gap-2"><Lock className="size-4"/> Password</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex flex-wrap items-center gap-1">
+                  {metadata.passwordProtected ? (
+                    <Badge variant="secondary"><Lock/> Password protected</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground"><LockOpen/> No password</Badge>
+                  )}
+                  {metadata.passwordProtected && password && (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className="text-muted-foreground"
+                      onClick={copyPassword}
+                      aria-label="Copy password"
+                      title="Copy password"
+                    >
+                      {copiedPassword ? <Check className="text-green-500"/> : <Copy/>}
+                    </Button>
+                  )}
+                </div>
+                {editingPassword ? (
+                  <PasswordEditor onApply={applyPassword} onCancel={() => setEditingPassword(false)}/>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={passwordBusy}
+                      onClick={() => {
+                        setPasswordError(null)
+                        setEditingPassword(true)
+                      }}
+                    >
+                      {metadata.passwordProtected ? 'Change' : 'Set password'}
+                    </Button>
+                    {metadata.passwordProtected && (
+                      <Button size="sm" variant="ghost" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        disabled={passwordBusy} onClick={removePassword}>
+                        {passwordBusy && <LoaderCircle className="animate-spin"/>} Remove
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {passwordError && <p className="text-xs text-destructive break-words" role="alert">{passwordError}</p>}
               </CardContent>
             </Card>
 

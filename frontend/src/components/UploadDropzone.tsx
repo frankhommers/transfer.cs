@@ -1,12 +1,14 @@
 import {useState, useCallback, useRef} from 'react'
 import {useDropzone} from 'react-dropzone'
-import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockKeyhole, LockOpen, Eye, EyeOff, Dices} from 'lucide-react'
+import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockOpen} from 'lucide-react'
 import {Progress} from '@/components/ui/progress'
 import {Button} from '@/components/ui/button'
-import {Input} from '@/components/ui/input'
 import {Badge} from '@/components/ui/badge'
-import {Slider} from '@/components/ui/slider'
-import {defaultPasswordLength, generatePassword, maxPasswordLength as maxGeneratedPasswordLength, minPasswordLength} from '@/lib/passwordGenerator'
+import {PasswordEditor} from '@/components/PasswordEditor'
+import {PasswordField} from '@/components/PasswordField'
+import {copyToClipboard} from '@/lib/clipboard'
+import {parseAdminUrl, removeDownloadPassword, setDownloadPassword, validateDownloadPassword} from '@/lib/downloadPassword'
+import {defaultPasswordLength, generatePassword} from '@/lib/passwordGenerator'
 import {cn} from '@/lib/utils'
 
 interface UploadResult {
@@ -23,17 +25,13 @@ interface UploadResult {
   failed: boolean
   error?: string
   retrying?: boolean
+  passwordBusy?: boolean
+  passwordError?: string
 }
 
 type UploadedFileResult = Pick<UploadResult, 'filename' | 'url' | 'deleteUrl' | 'adminUrl' | 'expires' | 'checksum' | 'passwordProtected'>
 
-const maxPasswordLength = 1024
-
-function validatePassword(password: string): string | null {
-  if (!password) return 'Enter a password.'
-  if (password.length > maxPasswordLength) return `Use at most ${maxPasswordLength} characters.`
-  return null
-}
+type PasswordEditorTarget = {kind: 'one'; id: string} | {kind: 'all'}
 
 interface UploadProgress {
   loaded: number
@@ -70,19 +68,10 @@ function encodeBase64(text: string) {
   return btoa(Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(''))
 }
 
-async function copyToClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch {
-    const textArea = document.createElement('textarea')
-    textArea.value = text
-    textArea.style.position = 'fixed'
-    textArea.style.opacity = '0'
-    document.body.appendChild(textArea)
-    textArea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textArea)
-  }
+function requireAdminTarget(result: UploadResult) {
+  const target = parseAdminUrl(result.adminUrl)
+  if (!target) throw new Error('This upload has no private admin link.')
+  return target
 }
 
 function uploadFiles(
@@ -146,14 +135,12 @@ export function UploadDropzone() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [copiedChecksumIndex, setCopiedChecksumIndex] = useState<number | null>(null)
   const [copiedAdminIndex, setCopiedAdminIndex] = useState<number | null>(null)
-  const [copiedPasswordIndex, setCopiedPasswordIndex] = useState<number | null>(null)
+  const [copiedPasswordId, setCopiedPasswordId] = useState<string | null>(null)
   const [copiedAll, setCopiedAll] = useState(false)
   const [protect, setProtect] = useState(false)
   const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [passwordLength, setPasswordLength] = useState(defaultPasswordLength)
-  const [copiedPassword, setCopiedPassword] = useState(false)
-  const passwordError = protect ? validatePassword(password) : null
+  const [editor, setEditor] = useState<PasswordEditorTarget | null>(null)
+  const passwordError = protect ? validateDownloadPassword(password) : null
   const uploadPassword = protect && !passwordError ? password : undefined
 
   const onDrop = useCallback(async (files: File[]) => {
@@ -237,32 +224,59 @@ export function UploadDropzone() {
     setTimeout(() => setCopiedAdminIndex(null), 2000)
   }
 
-  const suggestPassword = (length: number) => {
-    setPassword(generatePassword(length))
-    setShowPassword(true)
-  }
-
   const handleProtectChange = (checked: boolean) => {
     setProtect(checked)
-    if (checked && !password) suggestPassword(passwordLength)
+    if (checked && !password) setPassword(generatePassword(defaultPasswordLength))
   }
 
-  const handleLengthChange = (value: number | readonly number[]) => {
-    const length = Array.isArray(value) ? value[0] : value as number
-    setPasswordLength(length)
-    suggestPassword(length)
+  const handleCopyPassword = async (result: UploadResult) => {
+    if (!result.password) return
+    await copyToClipboard(result.password)
+    setCopiedPasswordId(result.id)
+    setTimeout(() => setCopiedPasswordId(null), 2000)
   }
 
-  const handleCopyPassword = async () => {
-    await copyToClipboard(password)
-    setCopiedPassword(true)
-    setTimeout(() => setCopiedPassword(false), 2000)
+  const updateResult = (id: string, update: Partial<UploadResult>) => {
+    setResults((prev) => prev.map((item) => item.id === id ? {...item, ...update} : item))
   }
 
-  const handleCopyWithPassword = async (result: UploadResult, index: number) => {
-    await copyToClipboard(`${result.url}\nPassword: ${result.password ?? ''}`)
-    setCopiedPasswordIndex(index)
-    setTimeout(() => setCopiedPasswordIndex(null), 2000)
+  const applyPassword = async (result: UploadResult, newPassword: string) => {
+    await setDownloadPassword(requireAdminTarget(result), newPassword)
+    updateResult(result.id, {passwordProtected: true, password: newPassword, passwordError: undefined})
+  }
+
+  const handleApplyOne = async (result: UploadResult, newPassword: string) => {
+    await applyPassword(result, newPassword)
+    setEditor(null)
+  }
+
+  const handleApplyAll = async (newPassword: string) => {
+    const failures: string[] = []
+    for (const result of results.filter((item) => !item.failed)) {
+      try {
+        await applyPassword(result, newPassword)
+      } catch (error: unknown) {
+        failures.push(`${result.filename}: ${error instanceof Error ? error.message : 'failed'}`)
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(`Could not set the password for ${failures.length} file${failures.length === 1 ? '' : 's'}. ${failures.join('; ')}`)
+    }
+    setEditor(null)
+  }
+
+  const handleRemovePassword = async (result: UploadResult) => {
+    if (editor?.kind === 'one' && editor.id === result.id) setEditor(null)
+    updateResult(result.id, {passwordBusy: true, passwordError: undefined})
+    try {
+      await removeDownloadPassword(requireAdminTarget(result))
+      updateResult(result.id, {passwordBusy: false, passwordProtected: false, password: undefined})
+    } catch (error: unknown) {
+      updateResult(result.id, {
+        passwordBusy: false,
+        passwordError: error instanceof Error ? error.message : 'Could not remove the password.',
+      })
+    }
   }
 
   const handleDelete = async (result: UploadResult) => {
@@ -272,12 +286,14 @@ export function UploadDropzone() {
       const response = await fetch(path, {method: 'DELETE'})
       if (!response.ok) throw new Error(`Deletion failed (HTTP ${response.status})`)
       setResults((prev) => prev.filter((item) => item.id !== result.id))
+      if (editor?.kind === 'one' && editor.id === result.id) setEditor(null)
     } catch { /* ignore */
     }
   }
 
   const {loaded: totalLoaded, total: totalSize} = progress
   const overallPercent = totalSize > 0 ? Math.round((totalLoaded / totalSize) * 100) : 0
+  const successfulCount = results.filter((result) => !result.failed).length
 
   return (
     <div className="space-y-4">
@@ -291,72 +307,17 @@ export function UploadDropzone() {
             onChange={(e) => handleProtectChange(e.target.checked)}
           />
           <Lock className="h-4 w-4 text-muted-foreground"/>
-          Protect with password
+          Protect uploads with password
         </label>
-        <p className="text-xs text-muted-foreground">
-          Applies to files you upload next. Files already uploaded keep their current setting.
-        </p>
         {protect && (
           <div className="space-y-1">
-            <div className="flex max-w-sm items-center gap-2">
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Download password"
-                aria-label="Download password"
-                aria-invalid={password !== '' && !!passwordError}
-                autoComplete="new-password"
-                disabled={uploading}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setShowPassword((prev) => !prev)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff/> : <Eye/>}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={handleCopyPassword}
-                disabled={!password}
-                aria-label="Copy password"
-                title="Copy password"
-              >
-                {copiedPassword ? <Check/> : <Copy/>}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => suggestPassword(passwordLength)}
-                disabled={uploading}
-                aria-label="Suggest password"
-                title="Suggest password"
-              >
-                <Dices/>
-              </Button>
-            </div>
-            <div className="flex max-w-sm items-center gap-3 py-1">
-              <span className="w-20 shrink-0 text-xs text-muted-foreground">Length: {passwordLength}</span>
-              <Slider
-                value={[passwordLength]}
-                min={minPasswordLength}
-                max={maxGeneratedPasswordLength}
-                step={1}
-                onValueChange={handleLengthChange}
-                disabled={uploading}
-                aria-label="Suggested password length"
-              />
-            </div>
-            <p className={cn('text-xs', passwordError && password !== '' ? 'text-destructive' : 'text-muted-foreground')}>
-              {passwordError ?? 'Recipients need this password to download. Share it separately from the link.'}
-            </p>
+            <PasswordField
+              value={password}
+              onChange={setPassword}
+              disabled={uploading}
+              invalid={!!passwordError}
+            />
+            {passwordError && <p className="text-xs text-destructive">{passwordError}</p>}
           </div>
         )}
       </div>
@@ -401,139 +362,195 @@ export function UploadDropzone() {
 
       {results.length > 0 && (
         <div className="space-y-2">
-          {results.filter((result) => !result.failed).length > 1 && (
-            <Button variant="outline" onClick={handleCopyAll}>
-              {copiedAll ? <Check/> : <Copy/>} {copiedAll ? 'Copied' : 'Copy all download links'}
-            </Button>
+          {successfulCount > 1 && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handleCopyAll}>
+                {copiedAll ? <Check/> : <Copy/>} {copiedAll ? 'Copied' : 'Copy all download links'}
+              </Button>
+              <Button variant="outline" onClick={() => setEditor({kind: 'all'})} disabled={editor?.kind === 'all'}>
+                <Lock/> Set password for all
+              </Button>
+            </div>
           )}
           {results.map((result, index) => (
-            <div
-              key={result.id}
-              className="flex items-center gap-3 bg-muted border border-border rounded-md p-3"
-            >
-              {result.failed ? (
-                <XCircle className="h-5 w-5 text-destructive shrink-0"/>
-              ) : (
-                <CheckCircle className="h-5 w-5 text-green-500 shrink-0"/>
-              )}
-              <div className="flex-1 min-w-0 text-left">
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="text-sm font-medium truncate">{result.filename}</p>
-                  {!result.failed && (result.passwordProtected ? (
-                    <Badge variant="secondary" className="shrink-0">
-                      <Lock/> Password protected
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="shrink-0 text-muted-foreground">
-                      <LockOpen/> No password
-                    </Badge>
-                  ))}
-                </div>
-                {result.files.length > 1 && (
-                  <p className="text-xs text-muted-foreground">{result.files.length} files in one ZIP</p>
-                )}
+            <div key={result.id} className="bg-muted border border-border rounded-md p-3 space-y-2">
+              <div className="flex items-center gap-3">
                 {result.failed ? (
-                  <p className="text-xs text-destructive break-words">{result.error || 'Upload failed'}</p>
+                  <XCircle className="h-5 w-5 text-destructive shrink-0"/>
                 ) : (
-                  <>
-                    <p className="text-xs text-muted-foreground truncate font-mono">
-                      {result.url}
-                    </p>
-                    {result.expires && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                        <Clock className="h-3 w-3"/>
-                        {formatExpiry(result.expires)}
-                      </p>
+                  <CheckCircle className="h-5 w-5 text-green-500 shrink-0"/>
+                )}
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="text-sm font-medium truncate min-w-0 max-w-full">{result.filename}</p>
+                    {!result.failed && (
+                      <div className="flex shrink-0 items-center gap-1">
+                        {result.passwordProtected ? (
+                          <Badge variant="secondary">
+                            <Lock/> Password protected
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            <LockOpen/> No password
+                          </Badge>
+                        )}
+                        {result.passwordProtected && result.password && (
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-muted-foreground"
+                            onClick={() => handleCopyPassword(result)}
+                            aria-label="Copy password"
+                            title="Copy password"
+                          >
+                            {copiedPasswordId === result.id ? <Check className="text-green-500"/> : <Copy/>}
+                          </Button>
+                        )}
+                        {result.adminUrl && (result.passwordProtected ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              className="text-muted-foreground"
+                              onClick={() => setEditor({kind: 'one', id: result.id})}
+                              disabled={result.passwordBusy}
+                            >
+                              Change
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => handleRemovePassword(result)}
+                              disabled={result.passwordBusy}
+                            >
+                              {result.passwordBusy && <Loader2 className="animate-spin"/>} Remove
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            className="text-muted-foreground"
+                            onClick={() => setEditor({kind: 'one', id: result.id})}
+                            disabled={result.passwordBusy}
+                          >
+                            Set password
+                          </Button>
+                        ))}
+                      </div>
                     )}
+                  </div>
+                  {result.files.length > 1 && (
+                    <p className="text-xs text-muted-foreground">{result.files.length} files in one ZIP</p>
+                  )}
+                  {result.failed ? (
+                    <p className="text-xs text-destructive break-words">{result.error || 'Upload failed'}</p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground truncate font-mono">
+                        {result.url}
+                      </p>
+                      {result.expires && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Clock className="h-3 w-3"/>
+                          {formatExpiry(result.expires)}
+                        </p>
+                      )}
+                      {result.checksum && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 min-w-0">
+                          <Hash className="h-3 w-3 shrink-0"/>
+                          <span className="font-mono truncate" title={`sha256:${result.checksum}`}>
+                            {result.checksum}
+                          </span>
+                        </p>
+                      )}
+                      {result.passwordError && (
+                        <p className="text-xs text-destructive break-words mt-0.5" role="alert">{result.passwordError}</p>
+                      )}
+                    </>
+                  )}
+                </div>
+                {result.failed && (
+                  <Button variant="outline" disabled={uploading} onClick={() => handleRetry(result)}>
+                    {result.retrying ? <Loader2 className="animate-spin"/> : <RotateCcw/>} Retry
+                  </Button>
+                )}
+                {!result.failed && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                      onClick={() => handleCopy(result.url, index)}
+                      aria-label="Copy URL"
+                    >
+                      {copiedIndex === index ? (
+                        <Check className="h-4 w-4 text-green-500"/>
+                      ) : (
+                        <Copy className="h-4 w-4"/>
+                      )}
+                    </button>
                     {result.checksum && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 min-w-0">
-                        <Hash className="h-3 w-3 shrink-0"/>
-                        <span className="font-mono truncate" title={`sha256:${result.checksum}`}>
-                          {result.checksum}
-                        </span>
-                      </p>
+                      <button
+                        type="button"
+                        className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                        onClick={() => handleCopyChecksum(result, index)}
+                        aria-label="Copy checksum verify command"
+                        title="Copy verify command"
+                      >
+                        {copiedChecksumIndex === index ? (
+                          <Check className="h-4 w-4 text-green-500"/>
+                        ) : (
+                          <ShieldCheck className="h-4 w-4"/>
+                        )}
+                      </button>
                     )}
-                  </>
+                    {result.adminUrl && (
+                      <button
+                        type="button"
+                        className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                        onClick={() => handleCopyAdmin(result.adminUrl, index)}
+                        aria-label="Copy private admin link"
+                        title="Copy private admin link"
+                      >
+                        {copiedAdminIndex === index ? (
+                          <Check className="h-4 w-4 text-green-500"/>
+                        ) : (
+                          <KeyRound className="h-4 w-4"/>
+                        )}
+                      </button>
+                    )}
+                    {result.deleteUrl && (
+                      <button
+                        type="button"
+                        className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-background transition-colors"
+                        onClick={() => handleDelete(result)}
+                        aria-label="Delete file"
+                      >
+                        <Trash2 className="h-4 w-4"/>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
-              {result.failed && (
-                <Button variant="outline" disabled={uploading} onClick={() => handleRetry(result)}>
-                  {result.retrying ? <Loader2 className="animate-spin"/> : <RotateCcw/>} Retry
-                </Button>
-              )}
-              {!result.failed && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                    onClick={() => handleCopy(result.url, index)}
-                    aria-label="Copy URL"
-                  >
-                    {copiedIndex === index ? (
-                      <Check className="h-4 w-4 text-green-500"/>
-                    ) : (
-                      <Copy className="h-4 w-4"/>
-                    )}
-                  </button>
-                  {result.passwordProtected && result.password && (
-                    <button
-                      type="button"
-                      className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                      onClick={() => handleCopyWithPassword(result, index)}
-                      aria-label="Copy link and password"
-                      title="Copy link + password"
-                    >
-                      {copiedPasswordIndex === index ? (
-                        <Check className="h-4 w-4 text-green-500"/>
-                      ) : (
-                        <LockKeyhole className="h-4 w-4"/>
-                      )}
-                    </button>
-                  )}
-                  {result.checksum && (
-                    <button
-                      type="button"
-                      className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                      onClick={() => handleCopyChecksum(result, index)}
-                      aria-label="Copy checksum verify command"
-                      title="Copy verify command"
-                    >
-                      {copiedChecksumIndex === index ? (
-                        <Check className="h-4 w-4 text-green-500"/>
-                      ) : (
-                        <ShieldCheck className="h-4 w-4"/>
-                      )}
-                    </button>
-                  )}
-                  {result.adminUrl && (
-                    <button
-                      type="button"
-                      className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                      onClick={() => handleCopyAdmin(result.adminUrl, index)}
-                      aria-label="Copy private admin link"
-                      title="Copy private admin link"
-                    >
-                      {copiedAdminIndex === index ? (
-                        <Check className="h-4 w-4 text-green-500"/>
-                      ) : (
-                        <KeyRound className="h-4 w-4"/>
-                      )}
-                    </button>
-                  )}
-                  {result.deleteUrl && (
-                    <button
-                      type="button"
-                      className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-background transition-colors"
-                      onClick={() => handleDelete(result)}
-                      aria-label="Delete file"
-                    >
-                      <Trash2 className="h-4 w-4"/>
-                    </button>
-                  )}
-                </div>
+              {editor?.kind === 'one' && editor.id === result.id && !result.failed && (
+                <PasswordEditor
+                  key={result.id}
+                  className="pl-8"
+                  onApply={(newPassword) => handleApplyOne(result, newPassword)}
+                  onCancel={() => setEditor(null)}
+                />
               )}
             </div>
           ))}
+          {editor?.kind === 'all' && successfulCount > 1 && (
+            <PasswordEditor
+              key="all"
+              className="border border-border rounded-md p-3"
+              onApply={handleApplyAll}
+              onCancel={() => setEditor(null)}
+            />
+          )}
         </div>
       )}
     </div>
