@@ -14,6 +14,7 @@ if [ $# -eq 0 ]; then
   echo "  -d, --downloads <count>     Set max download count"
   echo "  -t, --token <slug>          Set custom URL token"
   echo "  -p, --encrypt <password>    Server-side encryption"
+  echo "  -P, --password <password>   Require this password to download"
   echo "  -v, --verify                Send SHA-256 up front; server rejects a corrupted upload"
   echo ""
   echo "Examples:"
@@ -21,6 +22,7 @@ if [ $# -eq 0 ]; then
   echo "  transfer ./my-directory/"
   echo "  transfer hello.txt -e 7d -d 5"
   echo "  transfer secret.txt -p mypassword"
+  echo "  transfer report.pdf -P secret"
   echo "  transfer big.iso --verify"
   exit 1
 fi
@@ -32,6 +34,7 @@ EXPIRES=""
 MAX_DOWNLOADS=""
 TOKEN=""
 ENCRYPT=""
+DOWNLOAD_PASSWORD=""
 VERIFY=""
 
 while [ $# -gt 0 ]; do
@@ -40,6 +43,7 @@ while [ $# -gt 0 ]; do
     -d|--downloads) MAX_DOWNLOADS="$2"; shift 2 ;;
     -t|--token) TOKEN="$2"; shift 2 ;;
     -p|--encrypt) ENCRYPT="$2"; shift 2 ;;
+    -P|--password) DOWNLOAD_PASSWORD="$2"; shift 2 ;;
     -v|--verify) VERIFY=1; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -88,6 +92,7 @@ HEADERS=()
 [ -n "$MAX_DOWNLOADS" ] && HEADERS+=(-H "Max-Downloads: $MAX_DOWNLOADS")
 [ -n "$TOKEN" ] && HEADERS+=(-H "Token: $TOKEN")
 [ -n "$ENCRYPT" ] && HEADERS+=(-H "Encrypt-Password: $ENCRYPT")
+[ -n "$DOWNLOAD_PASSWORD" ] && HEADERS+=(-H "Download-Password: $DOWNLOAD_PASSWORD")
 
 # bash 3.2 (still the default /bin/bash on macOS) treats "${ARR[@]}" on an empty
 # array as an unbound variable under `set -u`, hence the guarded expansions below.

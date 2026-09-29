@@ -136,6 +136,44 @@ public sealed class SkillEndpointsTests
     return JsonSerializer.Deserialize<string>(lines[1][prefix.Length..]);
   }
 
+  [Fact]
+  public async Task Skill_DescribesEffectiveDownloadPasswordLimitsPerSiteAsync()
+  {
+    await using WebApplicationFactory<Program> factory = CreateFactory(options =>
+    {
+      options.InitialSiteId = "alpha";
+      options.Sites = new()
+      {
+        ["alpha"] = new() { Hosts = ["alpha.test"] },
+        ["beta"] = new()
+        {
+          Hosts = ["beta.test"],
+          DownloadPasswordMaxAttempts = 0,
+          DownloadPasswordUnlockHours = 2
+        }
+      };
+    });
+    using HttpClient client = factory.CreateClient();
+
+    string alpha = await GetSkillAsync(client, "alpha.test");
+    string beta = await GetSkillAsync(client, "beta.test");
+
+    Assert.Contains("**Download password attempts:** 50 failed attempts per file per 15 minutes", alpha);
+    Assert.Contains("**Browser unlock lifetime:** 12 hours", alpha);
+    Assert.Contains("**Download password attempts:** unlimited", beta);
+    Assert.Contains("**Browser unlock lifetime:** 2 hours", beta);
+    Assert.Contains("Download-Password", alpha);
+  }
+
+  private static async Task<string> GetSkillAsync(HttpClient client, string host)
+  {
+    using HttpRequestMessage request = new(HttpMethod.Get, "/SKILL.md");
+    request.Headers.Host = host;
+    using HttpResponseMessage response = await client.SendAsync(request);
+    response.EnsureSuccessStatusCode();
+    return await response.Content.ReadAsStringAsync();
+  }
+
   private static WebApplicationFactory<Program> CreateFactory(Action<TransferCsOptions> configure) =>
     new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
       builder.ConfigureServices(services => services.Configure(configure)));

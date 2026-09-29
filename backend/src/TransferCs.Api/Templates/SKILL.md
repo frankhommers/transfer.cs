@@ -85,6 +85,7 @@ http {{BaseUrl}}/ < ./file.txt
 | `File-Lifetime` | Expiry duration or date | `-H "File-Lifetime: 7d"` |
 | `Max-Downloads` | Download limit | `-H "Max-Downloads: 1"` |
 | `Encrypt-Password` | Server-side encrypt with password | `-H "Encrypt-Password: secret"` |
+| `Download-Password` | Require this password to download (1-1024 characters) | `-H "Download-Password: secret"` |
 | `Token` | Custom URL slug (min 4 chars, a-z0-9 and hyphens) | `-H "Token: my-slug"` |
 | `Content-Digest` | PUT only: validate one SHA-256 digest | `-H "Content-Digest: sha-256=:<base64>:"` |
 | `Accept` | Request upload metadata as JSON | `-H "Accept: application/json"` |
@@ -141,6 +142,36 @@ To decrypt a server-side encrypted file:
 ```bash
 curl -H "Decrypt-Password: secret" {{BaseUrl}}/<token>/file.txt -o ./file.txt
 ```
+
+## Password-protected downloads
+
+Add `Download-Password` to any upload (PUT, `POST /` or `POST /archive`). Every file stored
+by that request gets the same password, and the upload JSON reports `passwordProtected: true`.
+The value is used exactly as sent; empty, whitespace-only or longer than 1024 characters
+returns 400. This is an access gate, not encryption: combine it with `Encrypt-Password` or
+client-side encryption if the stored file must be encrypted.
+
+```bash
+curl --upload-file ./report.pdf -H "Download-Password: secret" {{BaseUrl}}/report.pdf
+```
+
+Download with the same header. Resume an interrupted download with `curl -C -`; every
+request, including a resumed one, needs the password:
+
+```bash
+curl -H "Download-Password: secret" {{BaseUrl}}/<token>/report.pdf -o ./report.pdf
+curl -C - -H "Download-Password: secret" {{BaseUrl}}/<token>/report.pdf -o ./report.pdf
+```
+
+Without the password, GET and HEAD return `401` and no size, checksum or expiry headers;
+a wrong password also returns `401`. Denied requests do not count as downloads. Bundles
+return `401` if any protected file in them is not unlocked. Too many wrong passwords for a
+file return `429` with `Retry-After` (in seconds); wait that long before trying again.
+
+Browsers opening the link get a page asking for the password. It calls
+`POST {{BaseUrl}}/api/unlock/<token>/<filename>` with JSON `{"password": "..."}`, which
+returns `204` and an HttpOnly cookie for that file (`401` wrong, `429` limited, `404`
+missing). The password cannot be changed or removed after upload.
 
 ## Download archive and extract
 
@@ -278,6 +309,8 @@ digests for encrypted files. Decrypted GET includes `Repr-Digest`.
 - **Max upload size:** {{MaxUploadSize}}
 - **Auto-purge:** {{PurgeDays}}
 - **Minimum free disk space:** {{MinFreeDiskSpace}}
+- **Download password attempts:** {{DownloadPasswordAttempts}}
+- **Browser unlock lifetime:** {{DownloadPasswordUnlock}}
 
 The server can return **507 Insufficient Storage** when an upload or temporary-file
 operation would use its disk space reserve. This can also happen during an upload,

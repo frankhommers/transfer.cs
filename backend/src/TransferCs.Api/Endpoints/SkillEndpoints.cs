@@ -42,6 +42,11 @@ public static class SkillEndpoints
       .Replace("{{MinFreeDiskSpace}}", options.MinFreeDiskSpaceMb > 0
         ? $"{options.MinFreeDiskSpaceMb} MiB" : "disabled")
       .Replace("{{PurgeDays}}", purgeDays)
+      .Replace("{{DownloadPasswordAttempts}}", options.DownloadPasswordMaxAttempts > 0
+        ? $"{options.DownloadPasswordMaxAttempts} failed attempts per file per " +
+          $"{options.DownloadPasswordAttemptWindowMinutes} minutes"
+        : "unlimited")
+      .Replace("{{DownloadPasswordUnlock}}", $"{options.DownloadPasswordUnlockHours} hours")
       .Replace("{{SkillDescription}}", FormatYamlBlock(options.SkillDescription));
 
     return Results.Text(content, "text/markdown; charset=utf-8");

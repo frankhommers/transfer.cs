@@ -7,6 +7,7 @@ Easy and fast file sharing from the command line. Inspired by [transfer.sh](http
 - Upload and download files via curl
 - Custom URL tokens (`-H "Token: my-slug"`)
 - Server-side encryption (`-H "Encrypt-Password: secret"`)
+- Per-upload download passwords (`-H "Download-Password: secret"`) with a browser unlock page
 - Client-side GPG encryption (pipe-based)
 - Expiry and download limits
 - Drop multiple files as one ZIP with one download and administration link
@@ -151,6 +152,59 @@ curl https://transfer.example.com/<token>/secret.txt | gpg -o- > ./secret.txt
 cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Password: mypass" https://transfer.example.com/secret.txt
 ```
 
+### Download passwords
+
+An uploader can require a password before anyone holding the link receives the file, its
+size or its checksum. This is an access gate, not encryption: the file is stored as
+uploaded. Combine it with `Encrypt-Password` or client-side encryption when the stored
+file must be encrypted.
+
+```bash
+# Upload (PUT, POST / and POST /archive); every file in the request gets the same password
+curl --upload-file ./report.pdf -H "Download-Password: secret" https://transfer.example.com/report.pdf
+transfer ./report.pdf -P secret
+
+# Download, and resume an interrupted download; each request needs the password
+curl -H "Download-Password: secret" https://transfer.example.com/<token>/report.pdf -o ./report.pdf
+curl -C - -H "Download-Password: secret" https://transfer.example.com/<token>/report.pdf -o ./report.pdf
+```
+
+The value is used exactly as sent. Empty, whitespace-only, or longer than 1024 characters
+returns `400`. The upload JSON reports `passwordProtected` per file. The password is stored
+as a salted PBKDF2-SHA256 hash and cannot be changed or removed after upload. The browser
+upload form only accepts printable ASCII without leading or trailing spaces, because
+browsers cannot send other characters in a request header.
+
+Protected: GET and HEAD on `/<token>/<file>` and `/{download,get,inline}/<token>/<file>`,
+bundles, and the preview API. Without credentials:
+
+| Request | Response |
+|---------|----------|
+| Browser (`Accept: text/html`) on `/<token>/<file>` | The share page with a password form |
+| Browser on `/{download,get,inline}/<token>/<file>` | `303` to `/<token>/<file>` |
+| Anything else without a password | `401` with a plain-text hint |
+| Wrong `Download-Password` | `401`, counted as a failed attempt |
+| Too many failed attempts | `429` with `Retry-After` (seconds), before the password is checked |
+| Bundle with any protected file not unlocked | `401` for the whole bundle |
+
+Denied responses carry no `Repr-Digest`, file `Content-Length`, `Sunset`, or
+`X-Remaining-Downloads`, and never count as a download. The preview API returns only the
+file name, links, QR code and `passwordProtected: true` while locked. The admin API and
+deletion links are not gated; admin metadata reports `passwordProtected`.
+
+The share page unlocks through `POST /api/unlock/<token>/<file>` with JSON
+`{"password": "..."}`. It returns `204` and sets an `HttpOnly`, `SameSite=Lax` cookie for
+that file (`Secure` over HTTPS), so inline previews, downloads and resumed range requests
+work in the browser. It returns `401` for a wrong password, `429` when limited, `404` for a
+missing file, and `204` without a cookie for unprotected files. Basic auth does not apply
+to this endpoint. The cookie is an HMAC signed with the stored password hash, so no separate
+secret is needed.
+
+Failed attempts are counted per site and file in memory, in a sliding window, and reset on
+success or restart. Anyone holding the link can use up the attempts and temporarily lock out
+other recipients. As with other downloads, every GET, including a range request, counts
+against `Max-Downloads`.
+
 ### Request Headers
 
 | Header | Scope | Description | Example |
@@ -159,6 +213,7 @@ cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Passw
 | `Max-Downloads` | PUT, multipart POST | Download limit | `1`, `5`, `100` |
 | `Token` | PUT, single-file POST `/`, POST `/archive` | Custom URL slug (min 4 chars, `a-z0-9-`) | `my-slug` |
 | `Encrypt-Password` | PUT | Server-side encryption password | any string |
+| `Download-Password` | PUT, multipart POST; GET, HEAD, bundles, preview API | Require (upload) or supply (download) the download password | 1–1024 characters |
 | `Content-Digest` | PUT | Validate the uploaded bytes before storage | `sha-256=:<base64>:` |
 | `Decrypt-Password` | GET | Decrypt an encrypted download | any string |
 | `Authorization` | Admin API | Per-file capability token | `Bearer <admin-token>` |
@@ -173,7 +228,8 @@ cat ./secret.txt | gpg -ac -o- | curl -X PUT --upload-file "-" -H "Encrypt-Passw
 | `Repr-Digest` | Unencrypted GET/HEAD; decrypted GET | SHA-256 of the entire selected file representation, including on range responses |
 | `Sunset` | GET, HEAD for an expiring file | Expected unavailability time as an HTTP date |
 | `X-Remaining-Downloads` | GET, HEAD | Remaining download count |
-| `Cache-Control: no-store` | Upload responses, file GET/HEAD, admin API | Prevent caching of capabilities and download-limited responses |
+| `Cache-Control: no-store` | Upload responses, file GET/HEAD, admin API, preview and unlock API | Prevent caching of capabilities and download-limited responses |
+| `Retry-After` | `429` for a password-protected file | Seconds until another password attempt is accepted |
 | `Vary: Accept` | Upload responses | Response format depends on `Accept` |
 
 `Expires` is reserved for HTTP cache freshness. It is not used for file retention.
@@ -351,6 +407,9 @@ implementation is the local filesystem.
 | `TransferCs__RandomTokenLength` | `10` | Generated token length; must be from 6 through 128 |
 | `TransferCs__DownloadLogEnabled` | `false` | Retain client IP and UTC time for accepted downloads |
 | `TransferCs__DownloadLogMaxEntries` | `50` | Recent download entries retained per file; effective minimum is one when logging is enabled |
+| `TransferCs__DownloadPasswordMaxAttempts` | `50` | Failed download-password attempts per file per window; `0` disables limiting |
+| `TransferCs__DownloadPasswordAttemptWindowMinutes` | `15` | Sliding window for failed attempts; 1 to 525600 |
+| `TransferCs__DownloadPasswordUnlockHours` | `12` | Lifetime of the browser unlock cookie; 1 to 87600 |
 | `TransferCs__ForceHttps` | `false` | Redirect HTTP requests to HTTPS with status 308, except `/health`, its subpaths, and `.onion` hosts |
 | `TransferCs__RateLimitRequestsPerMinute` | `0` (disabled) | Global fixed-window request limit per client IP |
 | `TransferCs__ClamAvHost` | *(empty)* | ClamAV `host` or `host:port`; the default port is `3310` |
@@ -410,8 +469,9 @@ a hard boundary is required. Health checks continue to report process availabili
 ### Access controls
 
 Basic auth, when configured, protects PUT, both multipart POST endpoints, and the legacy DELETE route.
-Basic auth does not protect GET or HEAD, so downloads remain public. The admin API
-bypasses basic auth and instead requires the per-file `Authorization: Bearer` token. A configured
+Basic auth does not protect GET or HEAD, so downloads remain public unless the upload has a
+download password. The admin API bypasses basic auth and instead requires the per-file
+`Authorization: Bearer` token. The download unlock endpoint also bypasses basic auth. A configured
 username/password or a matching entry in `HttpAuthHtpasswd` is accepted; the file reader
 supports only plaintext passwords and `{SHA}` SHA-1/base64 entries.
 
@@ -455,7 +515,9 @@ at a reverse proxy.
         "SkillDescription": "Share temporary files with the internal project team.",
         "DataDirectory": "internal",
         "PurgeDays": 3,
-        "MaxUploadSizeKb": 10485760
+        "MaxUploadSizeKb": 10485760,
+        "DownloadPasswordMaxAttempts": 10,
+        "DownloadPasswordUnlockHours": 2
       }
     }
   }
@@ -476,8 +538,9 @@ environment:
 ```
 
 Each site requires at least one `Hosts` entry. `DataDirectory` is site-specific and
-defaults to the site ID. `Title`, `SkillName`, `SkillDescription`, `BaseUrl`, `PurgeDays`, `MaxUploadSizeKb`, and
-`RandomTokenLength` may override global defaults. Other settings, including
+defaults to the site ID. `Title`, `SkillName`, `SkillDescription`, `BaseUrl`, `PurgeDays`, `MaxUploadSizeKb`,
+`RandomTokenLength`, `DownloadPasswordMaxAttempts`, `DownloadPasswordAttemptWindowMinutes`, and
+`DownloadPasswordUnlockHours` may override global defaults. Other settings, including
 `PurgeIntervalHours`, authentication, IP controls, scanning, and temporary storage,
 remain global.
 
@@ -706,8 +769,8 @@ expected upload; the defaults for write and idle timeouts are `0s` and `180s`.
 ### Important: Custom headers
 
 Preserve `Authorization`, `Content-Digest`, `File-Lifetime`, `Token`, `Encrypt-Password`,
-`Decrypt-Password`, and `Max-Downloads` on requests, and `Location`, `Link`, `Repr-Digest`,
-and `Sunset` on responses. Traefik passes them through by default. Check any configured
+`Decrypt-Password`, `Download-Password`, `Cookie`, and `Max-Downloads` on requests, and
+`Location`, `Link`, `Repr-Digest`, `Sunset`, `Retry-After`, and `Set-Cookie` on responses. Traefik passes them through by default. Check any configured
 `customRequestHeaders` or `customResponseHeaders` overrides. When CORS is enabled,
 transfer.cs exposes the response headers needed by browser clients.
 
