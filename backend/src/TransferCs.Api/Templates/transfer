@@ -92,7 +92,8 @@ HEADERS=()
 [ -n "$MAX_DOWNLOADS" ] && HEADERS+=(-H "Max-Downloads: $MAX_DOWNLOADS")
 [ -n "$TOKEN" ] && HEADERS+=(-H "Token: $TOKEN")
 [ -n "$ENCRYPT" ] && HEADERS+=(-H "Encrypt-Password: $ENCRYPT")
-[ -n "$DOWNLOAD_PASSWORD" ] && HEADERS+=(-H "Download-Password: $DOWNLOAD_PASSWORD")
+# Base64 keeps non-ASCII and space-padded passwords intact; tr drops GNU base64's line wrapping.
+[ -n "$DOWNLOAD_PASSWORD" ] && HEADERS+=(-H "Download-Password-Base64: $(printf %s "$DOWNLOAD_PASSWORD" | base64 | tr -d '\r\n')")
 
 # bash 3.2 (still the default /bin/bash on macOS) treats "${ARR[@]}" on an empty
 # array as an unbound variable under `set -u`, hence the guarded expansions below.

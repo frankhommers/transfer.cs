@@ -86,7 +86,7 @@ http {{BaseUrl}}/ < ./file.txt
 | `Max-Downloads` | Download limit | `-H "Max-Downloads: 1"` |
 | `Encrypt-Password` | Server-side encrypt with password | `-H "Encrypt-Password: secret"` |
 | `Download-Password` | Require this password to download (1-1024 characters) | `-H "Download-Password: secret"` |
-| `Download-Password-Base64` | Same, base64-encoded UTF-8 (non-ASCII or space-padded passwords) | `-H "Download-Password-Base64: $(printf %s 'café' \| base64)"` |
+| `Download-Password-Base64` | Same, as base64-encoded UTF-8 (see below) | `-H "Download-Password-Base64: Y2Fmw6k="` |
 | `Token` | Custom URL slug (min 4 chars, a-z0-9 and hyphens) | `-H "Token: my-slug"` |
 | `Content-Digest` | PUT only: validate one SHA-256 digest | `-H "Content-Digest: sha-256=:<base64>:"` |
 | `Accept` | Request upload metadata as JSON | `-H "Accept: application/json"` |
@@ -148,13 +148,23 @@ curl -H "Decrypt-Password: secret" {{BaseUrl}}/<token>/file.txt -o ./file.txt
 
 Add `Download-Password` to any upload (PUT, `POST /` or `POST /archive`). Every file stored
 by that request gets the same password, and the upload JSON reports `passwordProtected: true`.
-Any password of 1 to 1024 characters works; empty or longer returns 400. For passwords
-with non-ASCII characters or leading/trailing spaces, send `Download-Password-Base64` with
-the UTF-8 bytes base64-encoded instead (never both). This is an access gate, not encryption: combine it with `Encrypt-Password` or
-client-side encryption if the stored file must be encrypted.
+Any password of 1 to 1024 characters works; empty or longer returns 400. This is an access
+gate, not encryption: combine it with `Encrypt-Password` or client-side encryption if the
+stored file must be encrypted.
 
 ```bash
 curl --upload-file ./report.pdf -H "Download-Password: secret" {{BaseUrl}}/report.pdf
+```
+
+HTTP headers cannot carry non-ASCII text or leading/trailing spaces reliably. For such
+passwords send `Download-Password-Base64` with the UTF-8 bytes base64-encoded instead (never
+both headers). It works for uploads and downloads alike; strip the line wrapping GNU
+`base64` adds to long values:
+
+```bash
+curl --upload-file ./report.pdf \
+  -H "Download-Password-Base64: $(printf %s 'café secret' | base64 | tr -d '\n')" \
+  {{BaseUrl}}/report.pdf
 ```
 
 Download with the same header. Resume an interrupted download with `curl -C -`; every
