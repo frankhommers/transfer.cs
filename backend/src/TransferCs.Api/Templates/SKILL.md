@@ -173,7 +173,19 @@ file return `429` with `Retry-After` (in seconds); wait that long before trying 
 Browsers opening the link get a page asking for the password. It calls
 `POST {{BaseUrl}}/api/unlock/<token>/<filename>` with JSON `{"password": "..."}`, which
 returns `204` and an HttpOnly cookie for that file (`401` wrong, `429` limited, `404`
-missing). The password cannot be changed or removed after upload.
+missing).
+
+Set, change or remove the password later with the admin token from `adminUrl` (see
+Private administration). Changing or removing it invalidates browser unlock cookies:
+
+```bash
+curl -X PUT -H "Authorization: Bearer <admin-token>" -H "Content-Type: application/json" \
+  -d '{"password":"new secret"}' {{BaseUrl}}/api/admin/<token>/report.pdf/password
+curl -X DELETE -H "Authorization: Bearer <admin-token>" {{BaseUrl}}/api/admin/<token>/report.pdf/password
+```
+
+Both return `204`; `400` for an invalid password, `404` for a missing file or wrong token.
+Prefer the upload header when the file must never be unprotected.
 
 ## Download archive and extract
 
@@ -285,9 +297,12 @@ Extract the fragment from `adminUrl` and send it as a bearer token:
 ```bash
 curl -H "Authorization: Bearer <admin-token>" {{BaseUrl}}/api/admin/<token>/file.txt
 curl -X DELETE -H "Authorization: Bearer <admin-token>" {{BaseUrl}}/api/admin/<token>/file.txt
+curl -X PUT -H "Authorization: Bearer <admin-token>" -H "Content-Type: application/json" \
+  -d '{"password":"secret"}' {{BaseUrl}}/api/admin/<token>/file.txt/password
+curl -X DELETE -H "Authorization: Bearer <admin-token>" {{BaseUrl}}/api/admin/<token>/file.txt/password
 ```
 
-The old `Admin-Token` header is no longer accepted.
+Metadata reports `passwordProtected`. A wrong or missing token returns `404`. The old `Admin-Token` header is no longer accepted.
 
 ## Response Headers
 

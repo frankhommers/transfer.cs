@@ -172,10 +172,33 @@ curl -C - -H "Download-Password: secret" https://transfer.example.com/<token>/re
 Any password of 1 to 1024 characters is accepted; empty or longer returns `400`. HTTP strips
 surrounding whitespace from header values and cannot reliably carry non-ASCII text, so send
 such passwords base64-encoded (UTF-8) in `Download-Password-Base64` instead; the browser
-upload form always does this. Sending both headers returns `400`. Passwords are compared
-after Unicode NFC normalization. The upload JSON reports `passwordProtected` per file. The
-password is stored as a salted PBKDF2-SHA256 hash and cannot be changed or removed after
-upload.
+does this when "Protect uploads with password" is checked. Sending both headers returns
+`400`. Passwords are compared after Unicode NFC normalization. The upload JSON reports
+`passwordProtected` per file. The password is stored as a salted PBKDF2-SHA256 hash.
+
+Set, change or remove the password after upload with the per-file admin token (see
+[File administration](#file-administration)):
+
+```bash
+curl -X PUT -H "Authorization: Bearer <admin-token>" -H "Content-Type: application/json" \
+  -d '{"password":"new secret"}' https://transfer.example.com/api/admin/<token>/report.pdf/password
+curl -X DELETE -H "Authorization: Bearer <admin-token>" https://transfer.example.com/api/admin/<token>/report.pdf/password
+```
+
+`PUT` accepts any 1 to 1024 character password and stores a new hash with a fresh salt;
+`DELETE` makes the file freely downloadable again. Both return `204` (`400` for an invalid
+password, `415` without a JSON body, `404` for a missing file or wrong admin token).
+Either change invalidates existing browser unlock cookies and resets the failed-attempt
+counter for the file. Upload with the header instead when the file must never be
+unprotected, even briefly.
+
+In the browser, every upload result shows "Password protected" or "No password" with
+"Set password", or "Change" and "Remove"; "Set password for all" applies one password to
+all results. The editor suggests a random password with a length slider (8 to 32) that
+avoids ambiguous and shell-unsafe characters; typed passwords are unrestricted. Check
+"Protect uploads with password" above the drop area to send the password with the upload
+itself. Link and password are copied separately, so they can be shared over different
+channels. The private admin page offers the same actions.
 
 Protected: GET and HEAD on `/<token>/<file>` and `/{download,get,inline}/<token>/<file>`,
 bundles, and the preview API. Without credentials:
@@ -324,6 +347,16 @@ capability follows `#`, so it is not sent in the HTTP request target. The UI sav
 curl -H "Authorization: Bearer <admin-token>" https://transfer.example.com/api/admin/<token>/hello.txt
 curl -X DELETE -H "Authorization: Bearer <admin-token>" https://transfer.example.com/api/admin/<token>/hello.txt
 ```
+
+| Route | Purpose |
+|-------|---------|
+| `GET /api/admin/<token>/<file>` | Metadata, including `passwordProtected` and the download history |
+| `DELETE /api/admin/<token>/<file>` | Delete the file |
+| `PUT /api/admin/<token>/<file>/password` | Set or replace the download password (JSON `{"password": "..."}`) |
+| `DELETE /api/admin/<token>/<file>/password` | Remove the download password |
+
+A missing or wrong admin token returns the same `404` as a missing file, and every admin
+response carries `Cache-Control: no-store`.
 
 Download IP history is disabled by default. Enable it with
 `TransferCs__DownloadLogEnabled=true`; `TransferCs__DownloadLogMaxEntries` bounds the

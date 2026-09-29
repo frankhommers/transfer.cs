@@ -98,26 +98,39 @@ token (`Authorization: Bearer <admin-token>`, same non-enumerable 404 rules as t
 - `PUT /api/admin/{token}/{filename}/password` with JSON `{"password": "..."}` sets or
   replaces the password (new salt). Any 1-1024 character string is accepted.
 - `DELETE /api/admin/{token}/{filename}/password` removes it.
-- Both return `204` with `Cache-Control: no-store`; `400` for an invalid password.
+- Both return `204` with `Cache-Control: no-store`; `400` for an invalid password, `415`
+  without a JSON body. The admin token is checked first, so callers without it only see `404`
+  and cause no hashing work.
 - Changing or removing the password invalidates existing unlock cookies, because the cookie
   HMAC key is derived from the stored hash, and resets the attempt counter for the file.
 
-The upload-time `Download-Password`/`Download-Password-Base64` headers remain for the CLI, so
-a file can be protected without an unprotected window.
+The upload-time `Download-Password`/`Download-Password-Base64` headers remain for the CLI and
+the browser's optional pre-upload checkbox, so a file can be protected without an
+unprotected window.
 
 ## Frontend
 
-- The upload area has no password controls; it stays a plain dropzone.
+- Two paths, both optional:
+  - Before upload: one compact checkbox "Protect uploads with password" above the dropzone.
+    When checked it shows the password field (below, without Apply/Cancel) prefilled with a
+    suggestion; uploads made while checked send `Download-Password-Base64`. An empty or
+    too long password blocks the dropzone. No helper paragraphs.
+  - After upload: per-result management through the admin API, described below. Unchecked
+    uploads have no password until one is set.
 - Every successful upload result shows its status: "Password protected" (lock) or
   "No password" (open lock).
 - Unprotected results offer "Set password"; protected ones offer "Change" and "Remove".
   With more than one successful result, "Set password for all" applies one password to all.
-- "Set password"/"Change" opens a single inline row below the result (or the list):
-  password field with show/hide, copy and "suggest" icons inside the field, a compact length
-  slider (8-32, default 16) and Apply/Cancel. A suggestion is prefilled. Suggested
+- "Set password"/"Change" opens a single inline row below the result (or the list); only
+  one editor is open at a time. The shared password field has show/hide, copy and "suggest"
+  icons inside the input, a compact length slider (8-32, default 16) showing only the
+  number, and Apply/Cancel (Enter applies, Escape cancels, errors inline). A suggestion is
+  prefilled; moving the slider or clicking suggest regenerates it. "Set password for all"
+  applies sequentially and reports which files failed. Suggested
   passwords avoid `1lI!|¦0OoØ2Zz5Ss6b8B9g.,-_`'"/;{}()[]rnmvw\><&$`; typed passwords are
   unrestricted.
-- Link and password are never copied together. After applying, a separate "copy password"
+- Link and password are never copied together (there is no "copy link + password").
+  Uploads made with the checkbox also get the badge and the separate copy icon. After applying, a separate "copy password"
   icon sits next to the lock badge while the page is open; the password is kept in memory
   only.
 - The private admin page gets a password section with the same set/change/remove actions.
