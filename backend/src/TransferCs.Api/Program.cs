@@ -38,6 +38,7 @@ builder.Services.AddOptions<ForwardedHeadersOptions>()
 builder.Services.ConfigureHttpJsonOptions(options =>
   options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.AddSingleton<SiteResolver>();
+builder.Services.AddSingleton<IndexHtmlProvider>();
 builder.Services.AddSingleton<IDiskSpaceProbe, DiskSpaceProbe>();
 builder.Services.AddSingleton<DiskSpaceGuard>();
 builder.Services.AddSingleton<EncryptionService>();
@@ -117,7 +118,7 @@ app.UseMiddleware<BasicAuthMiddleware>();
 app.UseMiddleware<DiskSpaceMiddleware>();
 
 // Static file serving (frontend SPA)
-app.MapStaticAssets();
+app.MapStaticAssets().WithSiteIndexHtml();
 
 // Endpoints
 app.MapGet("/health", (SiteStorageFactory storageFactory) =>
@@ -144,8 +145,6 @@ app.MapScanEndpoints();
 app.MapPreviewEndpoints();
 app.MapSkillEndpoints();
 app.MapAdminEndpoints();
-
-app.MapFallbackToFile("index.html");
 
 app.Run();
 

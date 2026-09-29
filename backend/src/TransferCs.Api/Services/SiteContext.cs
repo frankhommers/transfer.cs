@@ -7,6 +7,8 @@ public sealed class SiteContext
   public ResolvedSite Site => _site ??
     throw new InvalidOperationException("No site has been resolved for this request.");
 
+  public bool IsResolved => _site != null;
+
   public void Resolve(ResolvedSite site)
   {
     if (_site != null)

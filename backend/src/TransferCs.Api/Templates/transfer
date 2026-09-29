@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # transfer - easy file sharing from the command line
-# Install: curl -sL https://xfer.hommers.nl/install.sh > ~/.local/bin/transfer && chmod +x ~/.local/bin/transfer
+# Install: curl -fsSL __BASE_URL__/install.sh | bash
 
 BASE_URL="${TRANSFER_URL:-__BASE_URL__}"
 

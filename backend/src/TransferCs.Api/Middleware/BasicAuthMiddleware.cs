@@ -24,7 +24,7 @@ public class BasicAuthMiddleware
     _authIpWhitelist = new IpListMatcher(_options.HttpAuthIpWhitelist);
   }
 
-  public async Task InvokeAsync(HttpContext context)
+  public async Task InvokeAsync(HttpContext context, SiteContext siteContext)
   {
     // Admin endpoints authenticate with the per-file Authorization: Bearer token. Requiring global
     // basic auth as well would turn a missing admin token into 401 instead of the intended
@@ -63,7 +63,7 @@ public class BasicAuthMiddleware
     string? authHeader = context.Request.Headers.Authorization.FirstOrDefault();
     if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
     {
-      ReturnUnauthorized(context);
+      ReturnUnauthorized(context, siteContext);
       return;
     }
 
@@ -74,7 +74,7 @@ public class BasicAuthMiddleware
       int colonIndex = decoded.IndexOf(':');
       if (colonIndex < 0)
       {
-        ReturnUnauthorized(context);
+        ReturnUnauthorized(context, siteContext);
         return;
       }
 
@@ -102,12 +102,13 @@ public class BasicAuthMiddleware
       // Invalid base64
     }
 
-    ReturnUnauthorized(context);
+    ReturnUnauthorized(context, siteContext);
   }
 
-  private static void ReturnUnauthorized(HttpContext context)
+  private void ReturnUnauthorized(HttpContext context, SiteContext siteContext)
   {
+    string title = siteContext.IsResolved ? siteContext.Site.Options.Title : _options.Title;
     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-    context.Response.Headers.WWWAuthenticate = "Basic realm=\"transfer.sh\"";
+    context.Response.Headers.WWWAuthenticate = $"Basic realm={HeaderValueHelper.ToQuotedString(title)}";
   }
 }
