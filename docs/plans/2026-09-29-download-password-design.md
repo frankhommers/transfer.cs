@@ -70,8 +70,8 @@ Cookie:
 
 Validating a cookie is an HMAC check, so range requests and resumed downloads stay cheap.
 No separate signing key is stored: forging a cookie requires the stored hash, and whoever
-can read metadata can already read the unencrypted file. Changing the password (not
-supported yet) would invalidate all cookies automatically.
+can read metadata can already read the unencrypted file. Changing the password
+invalidates all cookies automatically.
 
 ## Attempt limiting
 
@@ -90,11 +90,37 @@ Global in `TransferCs`, overridable per site in `Sites:<id>`:
 | `DownloadPasswordAttemptWindowMinutes` | `15` | Sliding window length, at least 1 |
 | `DownloadPasswordUnlockHours` | `12` | Unlock cookie lifetime, at least 1 |
 
+## Managing the password after upload
+
+The uploader can set, change or remove the password after upload with the per-file admin
+token (`Authorization: Bearer <admin-token>`, same non-enumerable 404 rules as the admin API):
+
+- `PUT /api/admin/{token}/{filename}/password` with JSON `{"password": "..."}` sets or
+  replaces the password (new salt). Any 1-1024 character string is accepted.
+- `DELETE /api/admin/{token}/{filename}/password` removes it.
+- Both return `204` with `Cache-Control: no-store`; `400` for an invalid password.
+- Changing or removing the password invalidates existing unlock cookies, because the cookie
+  HMAC key is derived from the stored hash, and resets the attempt counter for the file.
+
+The upload-time `Download-Password`/`Download-Password-Base64` headers remain for the CLI, so
+a file can be protected without an unprotected window.
+
 ## Frontend
 
-- Upload: an optional "Protect with password" toggle below the dropzone reveals a password
-  field with a show/hide control. The password is sent as `Download-Password` for single and
-  multi-file uploads. Results show a lock badge and a "Copy link + password" action.
+- The upload area has no password controls; it stays a plain dropzone.
+- Every successful upload result shows its status: "Password protected" (lock) or
+  "No password" (open lock).
+- Unprotected results offer "Set password"; protected ones offer "Change" and "Remove".
+  With more than one successful result, "Set password for all" applies one password to all.
+- "Set password"/"Change" opens a single inline row below the result (or the list):
+  password field with show/hide, copy and "suggest" icons inside the field, a compact length
+  slider (8-32, default 16) and Apply/Cancel. A suggestion is prefilled. Suggested
+  passwords avoid `1lI!|¦0OoØ2Zz5Ss6b8B9g.,-_`'"/;{}()[]rnmvw\><&$`; typed passwords are
+  unrestricted.
+- Link and password are never copied together. After applying, a separate "copy password"
+  icon sits next to the lock badge while the page is open; the password is kept in memory
+  only.
+- The private admin page gets a password section with the same set/change/remove actions.
 - Preview page: when `passwordProtected` and locked, show a lock, password field and unlock
   button. Unlock calls the unlock API, then refetches the preview and shows the normal preview
   (inline media included) and download button. Show clear messages for wrong passwords and
@@ -113,5 +139,6 @@ Global in `TransferCs`, overridable per site in `Sites:<id>`:
 
 - Every GET, including a range request, counts as a download against `Max-Downloads`
   (existing behaviour, out of scope).
-- The password cannot be changed or removed after upload.
+- Between a browser upload and applying a password the file is briefly unprotected; its
+  link is random and not yet shared.
 - Attempt counters are per process and reset on restart.
