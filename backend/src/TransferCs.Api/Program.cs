@@ -87,7 +87,7 @@ builder.Services.AddOptions<CorsOptions>()
       policy.WithOrigins(origins)
         .AllowAnyMethod()
         .AllowAnyHeader()
-        .WithExposedHeaders("Location", "Link", "Repr-Digest", "Sunset", "X-Remaining-Downloads");
+        .WithExposedHeaders("Location", "Link", "Repr-Digest", "Sunset", "X-Remaining-Downloads", "Retry-After");
     });
   });
 
