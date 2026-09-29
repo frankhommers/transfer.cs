@@ -6,12 +6,14 @@ import {CommandComposer} from '@/components/CommandComposer'
 import {ExampleSnippets} from '@/components/ExampleSnippets'
 import {Separator} from '@/components/ui/separator'
 import {useConfig} from '@/hooks/useConfig'
+import {useDocumentTitle} from '@/hooks/useDocumentTitle'
 
 type CliTab = 'builder' | 'examples'
 
 export function HomePage() {
     const baseUrl = window.location.origin
     const config = useConfig()
+    useDocumentTitle(config.title)
     const [copied, setCopied] = useState(false)
     const [cliOpen, setCliOpen] = useState(false)
     const [cliTab, setCliTab] = useState<CliTab>('builder')

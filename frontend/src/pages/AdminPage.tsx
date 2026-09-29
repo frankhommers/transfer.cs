@@ -13,6 +13,9 @@ import {
 } from 'lucide-react'
 import {Button} from '@/components/ui/button'
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card'
+import {SiteBrandLink} from '@/components/SiteBrandLink'
+import {useConfig} from '@/hooks/useConfig'
+import {useDocumentTitle} from '@/hooks/useDocumentTitle'
 
 interface DownloadEntry {
   ipAddress: string
@@ -69,6 +72,8 @@ export function AdminPage() {
   const [adminToken] = useState(() => readAdminToken(storageKey))
   const [state, setState] = useState<PageState>(adminToken ? {status: 'loading'} : {status: 'missing'})
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const {title} = useConfig()
+  useDocumentTitle(`Admin · ${filename} · ${title}`)
 
   useEffect(() => {
     if (!adminToken) {
@@ -122,16 +127,19 @@ export function AdminPage() {
 
     return (
       <main className="min-h-screen grid place-items-center bg-background px-4">
-        <div className="w-full max-w-lg border border-border bg-card p-8">
-          {state.status === 'loading'
-            ? <LoaderCircle className="mb-6 size-7 animate-spin text-primary"/>
-            : <ShieldAlert className="mb-6 size-7 text-muted-foreground"/>}
-          <p className="mb-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">private control plane</p>
-          <h1 className="mb-3 text-2xl font-semibold">{content[0]}</h1>
-          <p className="text-sm text-muted-foreground">{content[1]}</p>
-          {state.status !== 'loading' && (
-            <Button className="mt-8" variant="outline" onClick={() => navigate('/')}>Return home</Button>
-          )}
+        <div className="w-full max-w-lg">
+          <SiteBrandLink className="mb-4 inline-block"/>
+          <div className="border border-border bg-card p-8">
+            {state.status === 'loading'
+              ? <LoaderCircle className="mb-6 size-7 animate-spin text-primary"/>
+              : <ShieldAlert className="mb-6 size-7 text-muted-foreground"/>}
+            <p className="mb-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">private control plane</p>
+            <h1 className="mb-3 text-2xl font-semibold">{content[0]}</h1>
+            <p className="text-sm text-muted-foreground">{content[1]}</p>
+            {state.status !== 'loading' && (
+              <Button className="mt-8" variant="outline" onClick={() => navigate('/')}>Return home</Button>
+            )}
+          </div>
         </div>
       </main>
     )
@@ -145,6 +153,7 @@ export function AdminPage() {
   return (
     <main className="min-h-screen bg-background px-4 py-16">
       <div className="mx-auto max-w-5xl">
+        <SiteBrandLink className="mb-8 inline-block"/>
         <header className="mb-10 border-l-2 border-primary pl-5">
           <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-primary">
             <FileKey2 className="size-4"/>

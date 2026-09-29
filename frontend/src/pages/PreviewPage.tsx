@@ -5,6 +5,9 @@ import {Button, buttonVariants} from '@/components/ui/button'
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card'
 import {Badge} from '@/components/ui/badge'
 import {cn} from '@/lib/utils'
+import {SiteBrandLink} from '@/components/SiteBrandLink'
+import {useConfig} from '@/hooks/useConfig'
+import {useDocumentTitle} from '@/hooks/useDocumentTitle'
 
 interface PreviewData {
     contentType: string
@@ -33,6 +36,8 @@ export function PreviewPage() {
     const [error, setError] = useState<string | null>(null)
     const [showQr, setShowQr] = useState(false)
     const [textContent, setTextContent] = useState<string | null>(null)
+    const {title} = useConfig()
+    useDocumentTitle(`${preview?.filename ?? filename} · ${title}`)
 
     useEffect(() => {
         async function fetchPreview() {
@@ -60,7 +65,8 @@ export function PreviewPage() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
+            <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+                <SiteBrandLink/>
                 <p className="text-muted-foreground">Loading...</p>
             </div>
         )
@@ -68,7 +74,8 @@ export function PreviewPage() {
 
     if (error || !preview) {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
+            <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+                <SiteBrandLink/>
                 <p className="text-destructive">{error || 'File not found'}</p>
             </div>
         )
@@ -79,6 +86,7 @@ export function PreviewPage() {
     return (
         <div className="min-h-screen bg-background">
             <div className="max-w-4xl mx-auto px-4 py-8">
+                <SiteBrandLink className="mb-6 inline-block"/>
                 <Card>
                     <CardHeader>
                         <div className="flex items-start justify-between gap-4">
