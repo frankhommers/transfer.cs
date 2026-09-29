@@ -1,6 +1,6 @@
 import {useState, useCallback, useRef} from 'react'
 import {useDropzone} from 'react-dropzone'
-import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockKeyhole, Eye, EyeOff, Dices} from 'lucide-react'
+import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockKeyhole, LockOpen, Eye, EyeOff, Dices} from 'lucide-react'
 import {Progress} from '@/components/ui/progress'
 import {Button} from '@/components/ui/button'
 import {Input} from '@/components/ui/input'
@@ -281,44 +281,6 @@ export function UploadDropzone() {
 
   return (
     <div className="space-y-4">
-      <div
-        {...getRootProps()}
-        className={cn('border-2 border-dashed rounded-md p-12 text-center transition-colors',
-          uploading ? 'cursor-wait' : passwordError ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
-          isDragActive
-            ? 'border-primary bg-primary/5'
-            : 'border-muted-foreground/25 hover:border-primary/50'
-        )}
-      >
-        <input {...getInputProps()} />
-        {uploading ? (
-          <div className="space-y-4">
-            <Loader2 className="h-12 w-12 mx-auto animate-spin text-primary"/>
-            <p className="text-muted-foreground" role="status">
-              {processing ? (creatingZip ? 'Creating ZIP...' : 'Finishing upload...') : `Uploading... ${overallPercent}%`}
-            </p>
-            <Progress value={overallPercent} className="max-w-xs mx-auto"/>
-            <p className="text-xs text-muted-foreground">
-              {formatBytes(totalLoaded)} / {formatBytes(totalSize)}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <Upload className="h-12 w-12 mx-auto text-muted-foreground"/>
-            <p className="text-lg font-medium">
-              {isDragActive ? 'Drop files here' : 'Drag & drop files here'}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              or click to select files
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Multiple files selected or dropped at once are combined into one ZIP with one download link.
-            </p>
-            <p className="text-xs text-muted-foreground">Separate uploads get separate links.</p>
-          </div>
-        )}
-      </div>
-
       <div className="space-y-2 text-left">
         <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input
@@ -331,6 +293,9 @@ export function UploadDropzone() {
           <Lock className="h-4 w-4 text-muted-foreground"/>
           Protect with password
         </label>
+        <p className="text-xs text-muted-foreground">
+          Applies to files you upload next. Files already uploaded keep their current setting.
+        </p>
         {protect && (
           <div className="space-y-1">
             <div className="flex max-w-sm items-center gap-2">
@@ -396,6 +361,44 @@ export function UploadDropzone() {
         )}
       </div>
 
+      <div
+        {...getRootProps()}
+        className={cn('border-2 border-dashed rounded-md p-12 text-center transition-colors',
+          uploading ? 'cursor-wait' : passwordError ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+          isDragActive
+            ? 'border-primary bg-primary/5'
+            : 'border-muted-foreground/25 hover:border-primary/50'
+        )}
+      >
+        <input {...getInputProps()} />
+        {uploading ? (
+          <div className="space-y-4">
+            <Loader2 className="h-12 w-12 mx-auto animate-spin text-primary"/>
+            <p className="text-muted-foreground" role="status">
+              {processing ? (creatingZip ? 'Creating ZIP...' : 'Finishing upload...') : `Uploading... ${overallPercent}%`}
+            </p>
+            <Progress value={overallPercent} className="max-w-xs mx-auto"/>
+            <p className="text-xs text-muted-foreground">
+              {formatBytes(totalLoaded)} / {formatBytes(totalSize)}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Upload className="h-12 w-12 mx-auto text-muted-foreground"/>
+            <p className="text-lg font-medium">
+              {isDragActive ? 'Drop files here' : 'Drag & drop files here'}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              or click to select files
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Multiple files selected or dropped at once are combined into one ZIP with one download link.
+            </p>
+            <p className="text-xs text-muted-foreground">Separate uploads get separate links.</p>
+          </div>
+        )}
+      </div>
+
       {results.length > 0 && (
         <div className="space-y-2">
           {results.filter((result) => !result.failed).length > 1 && (
@@ -416,11 +419,15 @@ export function UploadDropzone() {
               <div className="flex-1 min-w-0 text-left">
                 <div className="flex min-w-0 items-center gap-2">
                   <p className="text-sm font-medium truncate">{result.filename}</p>
-                  {result.passwordProtected && (
-                    <Badge variant="secondary" className="shrink-0" title="Password protected">
-                      <Lock/> Password
+                  {!result.failed && (result.passwordProtected ? (
+                    <Badge variant="secondary" className="shrink-0">
+                      <Lock/> Password protected
                     </Badge>
-                  )}
+                  ) : (
+                    <Badge variant="outline" className="shrink-0 text-muted-foreground">
+                      <LockOpen/> No password
+                    </Badge>
+                  ))}
                 </div>
                 {result.files.length > 1 && (
                   <p className="text-xs text-muted-foreground">{result.files.length} files in one ZIP</p>
