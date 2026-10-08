@@ -12,6 +12,7 @@ import {
   Lock,
   LockOpen,
   Network,
+  QrCode,
   ShieldAlert,
   Trash2,
 } from 'lucide-react'
@@ -19,6 +20,7 @@ import {Badge} from '@/components/ui/badge'
 import {Button} from '@/components/ui/button'
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card'
 import {PasswordEditor} from '@/components/PasswordEditor'
+import {ShareQrCode} from '@/components/ShareQrCode'
 import {SiteBrandLink} from '@/components/SiteBrandLink'
 import {useConfig} from '@/hooks/useConfig'
 import {useDocumentTitle} from '@/hooks/useDocumentTitle'
@@ -269,6 +271,15 @@ export function AdminPage() {
                 >
                   <Download className="size-4"/> Download file
                 </a>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="flex items-center gap-2"><QrCode className="size-4"/> QR code</CardTitle>
+              </CardHeader>
+              <CardContent className="flex justify-center">
+                <ShareQrCode target={{token, filename}}/>
               </CardContent>
             </Card>
 

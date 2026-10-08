@@ -1,13 +1,15 @@
 import {useState, useCallback, useRef} from 'react'
 import {useDropzone} from 'react-dropzone'
-import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockOpen} from 'lucide-react'
+import {Upload, CheckCircle, XCircle, Loader2, Copy, Check, Clock, Trash2, Hash, ShieldCheck, KeyRound, RotateCcw, Lock, LockOpen, QrCode} from 'lucide-react'
 import {Progress} from '@/components/ui/progress'
 import {Button} from '@/components/ui/button'
 import {Badge} from '@/components/ui/badge'
 import {PasswordField} from '@/components/PasswordField'
+import {ShareQrCode} from '@/components/ShareQrCode'
 import {copyToClipboard} from '@/lib/clipboard'
 import {validateDownloadPassword} from '@/lib/downloadPassword'
 import {defaultPasswordLength, generatePassword} from '@/lib/passwordGenerator'
+import {parseShareUrl} from '@/lib/qrCode'
 import {cn} from '@/lib/utils'
 
 interface UploadResult {
@@ -126,6 +128,7 @@ export function UploadDropzone() {
   const [copiedAdminIndex, setCopiedAdminIndex] = useState<number | null>(null)
   const [copiedPasswordId, setCopiedPasswordId] = useState<string | null>(null)
   const [copiedAll, setCopiedAll] = useState(false)
+  const [qrResultId, setQrResultId] = useState<string | null>(null)
   const [protect, setProtect] = useState(false)
   const [password, setPassword] = useState('')
   const passwordError = protect ? validateDownloadPassword(password) : null
@@ -311,135 +314,152 @@ export function UploadDropzone() {
               {copiedAll ? <Check/> : <Copy/>} {copiedAll ? 'Copied' : 'Copy all download links'}
             </Button>
           )}
-          {results.map((result, index) => (
-            <div key={result.id} className="bg-muted border border-border rounded-md p-3 space-y-2">
-              <div className="flex items-center gap-3">
-                {result.failed ? (
-                  <XCircle className="h-5 w-5 text-destructive shrink-0"/>
-                ) : (
-                  <CheckCircle className="h-5 w-5 text-green-500 shrink-0"/>
-                )}
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="text-sm font-medium truncate min-w-0 max-w-full">{result.filename}</p>
-                    {!result.failed && (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Badge
-                          variant={result.passwordProtected ? 'secondary' : 'outline'}
-                          className={cn(!result.passwordProtected && 'text-muted-foreground')}
-                          render={result.adminUrl
-                            ? <a href={result.adminUrl} target="_blank" rel="noopener noreferrer"
-                                 title="Manage password on the private admin page"/>
-                            : undefined}
-                        >
-                          {result.passwordProtected ? <><Lock/> Password protected</> : <><LockOpen/> No password</>}
-                        </Badge>
-                        {result.passwordProtected && result.password && (
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            className="text-muted-foreground"
-                            onClick={() => handleCopyPassword(result)}
-                            aria-label="Copy password"
-                            title="Copy password"
+          {results.map((result, index) => {
+            const shareTarget = result.failed ? null : parseShareUrl(result.url)
+            return (
+              <div key={result.id} className="bg-muted border border-border rounded-md p-3 space-y-2">
+                <div className="flex items-center gap-3">
+                  {result.failed ? (
+                    <XCircle className="h-5 w-5 text-destructive shrink-0"/>
+                  ) : (
+                    <CheckCircle className="h-5 w-5 text-green-500 shrink-0"/>
+                  )}
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <p className="text-sm font-medium truncate min-w-0 max-w-full">{result.filename}</p>
+                      {!result.failed && (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Badge
+                            variant={result.passwordProtected ? 'secondary' : 'outline'}
+                            className={cn(!result.passwordProtected && 'text-muted-foreground')}
+                            render={result.adminUrl
+                              ? <a href={result.adminUrl} target="_blank" rel="noopener noreferrer"
+                                   title="Manage password on the private admin page"/>
+                              : undefined}
                           >
-                            {copiedPasswordId === result.id ? <Check className="text-green-500"/> : <Copy/>}
-                          </Button>
+                            {result.passwordProtected ? <><Lock/> Password protected</> : <><LockOpen/> No password</>}
+                          </Badge>
+                          {result.passwordProtected && result.password && (
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              className="text-muted-foreground"
+                              onClick={() => handleCopyPassword(result)}
+                              aria-label="Copy password"
+                              title="Copy password"
+                            >
+                              {copiedPasswordId === result.id ? <Check className="text-green-500"/> : <Copy/>}
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {result.files.length > 1 && (
+                      <p className="text-xs text-muted-foreground">{result.files.length} files in one ZIP</p>
+                    )}
+                    {result.failed ? (
+                      <p className="text-xs text-destructive break-words">{result.error || 'Upload failed'}</p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted-foreground truncate font-mono">
+                          {result.url}
+                        </p>
+                        {result.expires && (
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <Clock className="h-3 w-3"/>
+                            {formatExpiry(result.expires)}
+                          </p>
                         )}
-                      </div>
+                        {result.checksum && (
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 min-w-0">
+                            <Hash className="h-3 w-3 shrink-0"/>
+                            <span className="font-mono truncate" title={`sha256:${result.checksum}`}>
+                              {result.checksum}
+                            </span>
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
-                  {result.files.length > 1 && (
-                    <p className="text-xs text-muted-foreground">{result.files.length} files in one ZIP</p>
+                  {result.failed && (
+                    <Button variant="outline" disabled={uploading} onClick={() => handleRetry(result)}>
+                      {result.retrying ? <Loader2 className="animate-spin"/> : <RotateCcw/>} Retry
+                    </Button>
                   )}
-                  {result.failed ? (
-                    <p className="text-xs text-destructive break-words">{result.error || 'Upload failed'}</p>
-                  ) : (
-                    <>
-                      <p className="text-xs text-muted-foreground truncate font-mono">
-                        {result.url}
-                      </p>
-                      {result.expires && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                          <Clock className="h-3 w-3"/>
-                          {formatExpiry(result.expires)}
-                        </p>
+                  {!result.failed && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                        onClick={() => handleCopy(result.url, index)}
+                        aria-label="Copy URL"
+                      >
+                        {copiedIndex === index ? (
+                          <Check className="h-4 w-4 text-green-500"/>
+                        ) : (
+                          <Copy className="h-4 w-4"/>
+                        )}
+                      </button>
+                      {shareTarget && (
+                        <button
+                          type="button"
+                          className={cn('p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors',
+                            qrResultId === result.id && 'text-foreground bg-background')}
+                          onClick={() => setQrResultId((current) => current === result.id ? null : result.id)}
+                          aria-label="Show QR code"
+                          aria-expanded={qrResultId === result.id}
+                          title="Show QR code"
+                        >
+                          <QrCode className="h-4 w-4"/>
+                        </button>
                       )}
                       {result.checksum && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 min-w-0">
-                          <Hash className="h-3 w-3 shrink-0"/>
-                          <span className="font-mono truncate" title={`sha256:${result.checksum}`}>
-                            {result.checksum}
-                          </span>
-                        </p>
+                        <button
+                          type="button"
+                          className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                          onClick={() => handleCopyChecksum(result, index)}
+                          aria-label="Copy checksum verify command"
+                          title="Copy verify command"
+                        >
+                          {copiedChecksumIndex === index ? (
+                            <Check className="h-4 w-4 text-green-500"/>
+                          ) : (
+                            <ShieldCheck className="h-4 w-4"/>
+                          )}
+                        </button>
                       )}
-                    </>
+                      {result.adminUrl && (
+                        <button
+                          type="button"
+                          className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                          onClick={() => handleCopyAdmin(result.adminUrl, index)}
+                          aria-label="Copy private admin link"
+                          title="Copy private admin link"
+                        >
+                          {copiedAdminIndex === index ? (
+                            <Check className="h-4 w-4 text-green-500"/>
+                          ) : (
+                            <KeyRound className="h-4 w-4"/>
+                          )}
+                        </button>
+                      )}
+                      {result.deleteUrl && (
+                        <button
+                          type="button"
+                          className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-background transition-colors"
+                          onClick={() => handleDelete(result)}
+                          aria-label="Delete file"
+                        >
+                          <Trash2 className="h-4 w-4"/>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-                {result.failed && (
-                  <Button variant="outline" disabled={uploading} onClick={() => handleRetry(result)}>
-                    {result.retrying ? <Loader2 className="animate-spin"/> : <RotateCcw/>} Retry
-                  </Button>
-                )}
-                {!result.failed && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                      onClick={() => handleCopy(result.url, index)}
-                      aria-label="Copy URL"
-                    >
-                      {copiedIndex === index ? (
-                        <Check className="h-4 w-4 text-green-500"/>
-                      ) : (
-                        <Copy className="h-4 w-4"/>
-                      )}
-                    </button>
-                    {result.checksum && (
-                      <button
-                        type="button"
-                        className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                        onClick={() => handleCopyChecksum(result, index)}
-                        aria-label="Copy checksum verify command"
-                        title="Copy verify command"
-                      >
-                        {copiedChecksumIndex === index ? (
-                          <Check className="h-4 w-4 text-green-500"/>
-                        ) : (
-                          <ShieldCheck className="h-4 w-4"/>
-                        )}
-                      </button>
-                    )}
-                    {result.adminUrl && (
-                      <button
-                        type="button"
-                        className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                        onClick={() => handleCopyAdmin(result.adminUrl, index)}
-                        aria-label="Copy private admin link"
-                        title="Copy private admin link"
-                      >
-                        {copiedAdminIndex === index ? (
-                          <Check className="h-4 w-4 text-green-500"/>
-                        ) : (
-                          <KeyRound className="h-4 w-4"/>
-                        )}
-                      </button>
-                    )}
-                    {result.deleteUrl && (
-                      <button
-                        type="button"
-                        className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-background transition-colors"
-                        onClick={() => handleDelete(result)}
-                        aria-label="Delete file"
-                      >
-                        <Trash2 className="h-4 w-4"/>
-                      </button>
-                    )}
-                  </div>
-                )}
+                {qrResultId === result.id && shareTarget && <ShareQrCode target={shareTarget} className="ml-8"/>}
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
