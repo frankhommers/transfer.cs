@@ -17,7 +17,6 @@ onsider other possibilities to achieve the result, do not be limited by the prom
 - **No Hallucinations:** Do not invent APIs, methods, or properties that do not exist. If you are unsure about a specific API, state that you cannot provide a definitive answer. Do not generate code that is likely to be incorrect or based on outdated information. Make sure to fetch docs when unsure.
 - **Performance:** Be mindful of performance. Use efficient algorithms and data structures. Avoid unnecessary allocations, especially in performance-critical code.
 - **Hardcoding:** Judge what you hardcode, that is usually a bad pattern, avoid it if possible.
-- **UI:** If the application is a UI application, you can not run it to test it, so ask the user to test for you.
 - **Secrets:** Keep them out of the code and out of source control at ALL times!
 - **Backward compatibility:** Don't assume that the code needs to be backward compatible, ask the user.
 - **Generated Code:** Never manually edit generated code or files (e.g., code from scaffolding tools, ORM migrations, API client generators, or build outputs). If generated code contains issues, fix them in the generation process, templates, or configuration — not in the output. If you are unsure whether a file is generated, check for auto-generation headers or ask the user.
@@ -36,6 +35,11 @@ onsider other possibilities to achieve the result, do not be limited by the prom
 - Use meaningful file and directory names
 - Separate concerns appropriately
 - Group related functionality together
+
+## i18n
+- Use English by Default if it's not clear from the project
+- Maintain all languages if there are i18n functionalities
+- Use the ISO8601 format for displaying date/times everywhere
 
 # GitHub Actions Guidelines
 
@@ -96,6 +100,7 @@ onsider other possibilities to achieve the result, do not be limited by the prom
 
 ## Commits
 - Write concise commit messages that explain **why**, not what.
+- Never add Co-Authored-By or AI attribution to git commits. No modelname, no tooling name. 
 - Use conventional commit prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 - Keep commits atomic — one logical change per commit.
 - Do not commit secrets, credentials, or environment files.
@@ -294,7 +299,7 @@ public class UserService
 ```
 
 
-# Frontend Development — React + Vite + shadcn/ui
+# Frontend Development — React + Vite + shadcn/ui + Material Design Icons
 
 You build frontend applications using React with Vite, styled with Tailwind CSS v4 and shadcn/ui components.
 
@@ -309,6 +314,8 @@ You build frontend applications using React with Vite, styled with Tailwind CSS 
    ```bash
    bunx shadcn@latest init --preset b1VlIttI
    ```
+   Make sure it's possible to switch this preset later on. Make sure you note down the preset used.
+
 3. Use **Bun** for all package management and script execution:
    - `bun install` — install dependencies
    - `bun run dev` — start dev server
@@ -347,6 +354,7 @@ You build frontend applications using React with Vite, styled with Tailwind CSS 
    }
    ```
 5. **shadcn theme inline pattern** — map colors via `@theme inline { }` blocks so Tailwind utilities respond to runtime theme changes.
+6. **For icons always use Material Design Icons. `@mdi/react` `@mdi/js`
 
 ## Component Conventions
 
@@ -486,6 +494,12 @@ ProjectName/
 ## Rider Launch Profiles
 
 Every project must have two run configurations in the `.run/` directory at the repo root. These are committed to git so all developers share the same setup.
+
+### ProjectName.Frontend.esproj
+
+```bash
+dotnet package search Microsoft.VisualStudio.JavaScript.Sdk --exact-match --format json | jq -r  '.searchResult[0].packages[-1].version'
+```
 
 ### Backend.run.xml
 
